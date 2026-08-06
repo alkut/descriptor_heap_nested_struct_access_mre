@@ -1,7 +1,9 @@
 ## Descriptor heap nested struct access MRE
 
 This is a minimal reproducable example, that shows unexpected behavour of VK_EXT_descriptor_heap extension when Storage Buffer contains a nested structs.
+
 It looks like pipeline compiler ignores all offsets in access chain, except for the last (most inner) struct
+
 For example,
 
 ```
@@ -72,8 +74,11 @@ It translates to
 ```
 
 Let's take a look at
+
 OpAccessChain %_ptr_StorageBuffer_int %74 %int_0 %72 %int_1 %int_2 %int_2
+
 (note that %int_0 is 0 literal constant, %int_1 is 1, %int_2 is 2, %72 is i)
+
 - %74 is InputBlock 
 - then access 0-th member, get inputValues[]
 - then access i-th index, get inputValues[i]
@@ -130,6 +135,7 @@ All offset/stride decorations also seem right:
 ```
 
 The observable behavour is - all offsets in access chain are ignored, except for the last one.
+
 In the given code:
 
 ```
@@ -142,7 +148,9 @@ void main() {
 ```
 
 InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.value2 reads data with offset = offsetof(Inner, value2) = 0 (and it's Input.value1)
+
 InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.value3 reads data with offset = offsetof(Inner, value3) = 4 (and it's Input.inner.value2)
+
 InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.inner2.value6 reads data with offset = offsetof(Inner2, value6) = 8 (and it's Input.inner.value3)
 
 ## Requirements
