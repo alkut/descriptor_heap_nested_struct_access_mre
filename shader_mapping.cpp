@@ -15,13 +15,17 @@
 	#error Only Windows Supported
 #endif// #ifndef _WIN32
 
-#ifndef TEST_FAILING_SHADER_SPIRV_FILEPATH
+#ifndef FAILING_SHADER_SPIRV_FILEPATH
 	#error Add compiler definition
-#endif// #ifndef TEST_FAILING_SHADER_SPIRV_FILEPATH
+#endif// #ifndef FAILING_SHADER_SPIRV_FILEPATH
 
-#ifndef TEST_WORKING_SHADER_SPIRV_FILEPATH
+#ifndef WORKING_SHADER_SPIRV_FILEPATH
 	#error Add compiler definition
-#endif// #ifndef TEST_WORKING_SHADER_SPIRV_FILEPATH
+#endif// #ifndef WORKING_SHADER_SPIRV_FILEPATH
+
+#ifndef PROJECT_ROOT
+	#error Add compiler definition
+#endif// #ifndef PROJECT_ROOT
 
 #define VALIDATION_LAYERS_ENABLED 1
 #define EXIT_CODE_ON_ANY_VALIDATION_LAYER_ERROR 42
@@ -288,13 +292,10 @@ VkShaderModule CreateShaderModule(
     const VkAllocationCallbacks* pAllocator
 );
 
-/*
+#if 0
 ----------------------------------------------------------------------------------------- GLSL code -----------------------------------------------------------------------------------------
 
 #version 450 core
-
-#extension GL_EXT_descriptor_heap : enable
-#extension GL_EXT_nonuniform_qualifier : enable
 
 layout (local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
@@ -313,24 +314,19 @@ struct Output {
     int value6;
 };
 
-layout (descriptor_heap) buffer InputBlock {
+layout (set = 0, binding = 0) buffer InputBlock {
     Input inputValues[];
-} InputBuffers[];
+} InputBuffers;
 
-layout (descriptor_heap) buffer OutputBlock {
+layout (set = 0, binding = 1) buffer OutputBlock {
     Output outputValues[];
-} OutputBuffers[];
-
-layout (push_constant) uniform PushConstantBlock {
-    uint inputBufferIdx;
-    uint outputBufferIdx;
-} PushConstant;
+} OutputBuffers;
 
 void main() {
     uint i = gl_GlobalInvocationID.x;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value2 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].value2;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value3 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].value3;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value6 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].value6;
+    OutputBuffers.outputValues[i].value2 = InputBuffers.inputValues[i].value2;
+    OutputBuffers.outputValues[i].value3 = InputBuffers.inputValues[i].value3;
+    OutputBuffers.outputValues[i].value6 = InputBuffers.inputValues[i].value6;
 }
 
 ----------------------------------------------------------------------------------------- SPIR-V code -----------------------------------------------------------------------------------------
@@ -338,36 +334,26 @@ void main() {
 ; SPIR-V
 ; Version: 1.3
 ; Generator: Google Shaderc over Glslang; 11
-; Bound: 82
+; Bound: 50
 ; Schema: 0
                OpCapability Shader
-               OpCapability UntypedPointersKHR
-               OpCapability DescriptorHeapEXT
-               OpExtension "SPV_EXT_descriptor_heap"
-               OpExtension "SPV_KHR_untyped_pointers"
           %1 = OpExtInstImport "GLSL.std.450"
                OpMemoryModel Logical GLSL450
                OpEntryPoint GLCompute %main "main" %gl_GlobalInvocationID
                OpExecutionMode %main LocalSize 16 1 1
                OpSource GLSL 450
-               OpSourceExtension "GL_EXT_descriptor_heap"
-               OpSourceExtension "GL_EXT_nonuniform_qualifier"
                OpSourceExtension "GL_GOOGLE_cpp_style_line_directive"
                OpSourceExtension "GL_GOOGLE_include_directive"
                OpName %main "main"
                OpName %i "i"
                OpName %gl_GlobalInvocationID "gl_GlobalInvocationID"
-               OpName %resource_heap "resource_heap"
-               OpName %PushConstantBlock "PushConstantBlock"
-               OpMemberName %PushConstantBlock 0 "inputBufferIdx"
-               OpMemberName %PushConstantBlock 1 "outputBufferIdx"
-               OpName %PushConstant "PushConstant"
                OpName %Output "Output"
                OpMemberName %Output 0 "value2"
                OpMemberName %Output 1 "value3"
                OpMemberName %Output 2 "value6"
                OpName %OutputBlock "OutputBlock"
                OpMemberName %OutputBlock 0 "outputValues"
+               OpName %OutputBuffers "OutputBuffers"
                OpName %Input "Input"
                OpMemberName %Input 0 "value1"
                OpMemberName %Input 1 "value2"
@@ -377,19 +363,16 @@ void main() {
                OpMemberName %Input 5 "value6"
                OpName %InputBlock "InputBlock"
                OpMemberName %InputBlock 0 "inputValues"
+               OpName %InputBuffers "InputBuffers"
                OpDecorate %gl_GlobalInvocationID BuiltIn GlobalInvocationId
-               OpDecorate %resource_heap BuiltIn ResourceHeapEXT
-               OpDecorateId %_runtimearr_18 ArrayStrideIdEXT %19
-               OpDecorate %PushConstantBlock Block
-               OpMemberDecorate %PushConstantBlock 0 Offset 0
-               OpMemberDecorate %PushConstantBlock 1 Offset 4
                OpMemberDecorate %Output 0 Offset 0
                OpMemberDecorate %Output 1 Offset 4
                OpMemberDecorate %Output 2 Offset 8
                OpDecorate %_runtimearr_Output ArrayStride 12
                OpDecorate %OutputBlock Block
                OpMemberDecorate %OutputBlock 0 Offset 0
-               OpDecorateId %_runtimearr_18_0 ArrayStrideIdEXT %19
+               OpDecorate %OutputBuffers Binding 1
+               OpDecorate %OutputBuffers DescriptorSet 0
                OpMemberDecorate %Input 0 Offset 0
                OpMemberDecorate %Input 1 Offset 4
                OpMemberDecorate %Input 2 Offset 8
@@ -399,6 +382,8 @@ void main() {
                OpDecorate %_runtimearr_Input ArrayStride 24
                OpDecorate %InputBlock Block
                OpMemberDecorate %InputBlock 0 Offset 0
+               OpDecorate %InputBuffers Binding 0
+               OpDecorate %InputBuffers DescriptorSet 0
                OpDecorate %gl_WorkGroupSize BuiltIn WorkgroupSize
        %void = OpTypeVoid
           %3 = OpTypeFunction %void
@@ -409,28 +394,20 @@ void main() {
 %gl_GlobalInvocationID = OpVariable %_ptr_Input_v3uint Input
      %uint_0 = OpConstant %uint 0
 %_ptr_Input_uint = OpTypePointer Input %uint
-%_ptr_UniformConstant = OpTypeUntypedPointerKHR UniformConstant
-%resource_heap = OpUntypedVariableKHR %_ptr_UniformConstant UniformConstant
-         %18 = OpTypeBufferEXT StorageBuffer
-         %19 = OpConstantSizeOfEXT %uint %18
-%_runtimearr_18 = OpTypeRuntimeArray %18
-%PushConstantBlock = OpTypeStruct %uint %uint
-%_ptr_PushConstant_PushConstantBlock = OpTypePointer PushConstant %PushConstantBlock
-%PushConstant = OpVariable %_ptr_PushConstant_PushConstantBlock PushConstant
         %int = OpTypeInt 32 1
-      %int_1 = OpConstant %int 1
-%_ptr_PushConstant_uint = OpTypePointer PushConstant %uint
      %Output = OpTypeStruct %int %int %int
 %_runtimearr_Output = OpTypeRuntimeArray %Output
 %OutputBlock = OpTypeStruct %_runtimearr_Output
+%_ptr_StorageBuffer_OutputBlock = OpTypePointer StorageBuffer %OutputBlock
+%OutputBuffers = OpVariable %_ptr_StorageBuffer_OutputBlock StorageBuffer
       %int_0 = OpConstant %int 0
-%_runtimearr_18_0 = OpTypeRuntimeArray %18
       %Input = OpTypeStruct %int %int %int %int %int %int
 %_runtimearr_Input = OpTypeRuntimeArray %Input
  %InputBlock = OpTypeStruct %_runtimearr_Input
 %_ptr_StorageBuffer_InputBlock = OpTypePointer StorageBuffer %InputBlock
+%InputBuffers = OpVariable %_ptr_StorageBuffer_InputBlock StorageBuffer
+      %int_1 = OpConstant %int 1
 %_ptr_StorageBuffer_int = OpTypePointer StorageBuffer %int
-%_ptr_StorageBuffer_OutputBlock = OpTypePointer StorageBuffer %OutputBlock
       %int_2 = OpConstant %int 2
       %int_5 = OpConstant %int 5
     %uint_16 = OpConstant %uint 16
@@ -442,65 +419,91 @@ void main() {
          %14 = OpAccessChain %_ptr_Input_uint %gl_GlobalInvocationID %uint_0
          %15 = OpLoad %uint %14
                OpStore %i %15
-         %27 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
-         %28 = OpLoad %uint %27
-         %33 = OpLoad %uint %i
-         %35 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
-         %36 = OpLoad %uint %35
-         %40 = OpLoad %uint %i
-         %41 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %36
-         %43 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %41
-         %45 = OpAccessChain %_ptr_StorageBuffer_int %43 %int_0 %40 %int_1
-         %46 = OpLoad %int %45
-         %47 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %28
-         %49 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %47
-         %50 = OpAccessChain %_ptr_StorageBuffer_int %49 %int_0 %33 %int_0
-               OpStore %50 %46
-         %51 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
-         %52 = OpLoad %uint %51
-         %53 = OpLoad %uint %i
-         %54 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
-         %55 = OpLoad %uint %54
-         %56 = OpLoad %uint %i
-         %58 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %55
-         %59 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %58
-         %60 = OpAccessChain %_ptr_StorageBuffer_int %59 %int_0 %56 %int_2
-         %61 = OpLoad %int %60
-         %62 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %52
-         %63 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %62
-         %64 = OpAccessChain %_ptr_StorageBuffer_int %63 %int_0 %53 %int_1
-               OpStore %64 %61
-         %65 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
-         %66 = OpLoad %uint %65
-         %67 = OpLoad %uint %i
-         %68 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
-         %69 = OpLoad %uint %68
-         %70 = OpLoad %uint %i
-         %72 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %69
-         %73 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %72
-         %74 = OpAccessChain %_ptr_StorageBuffer_int %73 %int_0 %70 %int_5
-         %75 = OpLoad %int %74
-         %76 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %66
-         %77 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %76
-         %78 = OpAccessChain %_ptr_StorageBuffer_int %77 %int_0 %67 %int_2
-               OpStore %78 %75
+         %23 = OpLoad %uint %i
+         %29 = OpLoad %uint %i
+         %32 = OpAccessChain %_ptr_StorageBuffer_int %InputBuffers %int_0 %29 %int_1
+         %33 = OpLoad %int %32
+         %34 = OpAccessChain %_ptr_StorageBuffer_int %OutputBuffers %int_0 %23 %int_0
+               OpStore %34 %33
+         %35 = OpLoad %uint %i
+         %36 = OpLoad %uint %i
+         %38 = OpAccessChain %_ptr_StorageBuffer_int %InputBuffers %int_0 %36 %int_2
+         %39 = OpLoad %int %38
+         %40 = OpAccessChain %_ptr_StorageBuffer_int %OutputBuffers %int_0 %35 %int_1
+               OpStore %40 %39
+         %41 = OpLoad %uint %i
+         %42 = OpLoad %uint %i
+         %44 = OpAccessChain %_ptr_StorageBuffer_int %InputBuffers %int_0 %42 %int_5
+         %45 = OpLoad %int %44
+         %46 = OpAccessChain %_ptr_StorageBuffer_int %OutputBuffers %int_0 %41 %int_2
+               OpStore %46 %45
                OpReturn
                OpFunctionEnd
 
- */
+----------------------------------------------------------------------------------------- SASS code -----------------------------------------------------------------------------------------
+
+.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
+	.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
+        /*0000*/                   S2R R0, SR_CTAID.X ;
+        /*0010*/                   ULDC.64 UR8, c[0x0][0x20] ;
+        /*0020*/                   USHF.L.U32.HI UR4, URZ, 0x4, UR8 ;
+        /*0030*/                   S2R R1, SR_TID.X ;
+        /*0040*/                   ULDC.64 UR10, c[0x0][0x220] ;
+        /*0050*/                   UIADD3 UR4, UP0, UR4, UR10, URZ ;
+        /*0060*/                   UIADD3.X UR5, URZ, UR11, URZ, UP0, !UPT ;
+        /*0070*/                   ULDC UR8, [UR4+0x8], !UPT ;
+        /*0080*/                   ULDC.64 UR4, [UR4], !UPT ;
+        /*0090*/                   UMOV UR6, UR4 ;
+        /*00a0*/                   IMAD R0, R0, 0x10, R1 ;
+        /*00b0*/                   UMOV UR7, UR5 ;
+        /*00c0*/                   IMAD R1, R0, 0x18, RZ ;
+        /*00d0*/                   IADD3 R2, R1, 0x4, RZ ;
+        /*00e0*/                   ISETP.GE.U32.AND P0, PT, R2, UR8, PT ;
+        /*00f0*/                   LDG.E R2, [R2.U32+UR6], !P0 ;
+        /*0100*/                   USHF.L.U32.HI UR4, URZ, 0x4, UR9 ;
+        /*0110*/                   IMAD R3, R0, 0xc, RZ ;
+        /*0120*/                   IADD3 R0, R1, 0x8, RZ ;
+        /*0130*/                   UIADD3 UR4, UP0, UR4, UR10, URZ ;
+        /*0140*/                   ISETP.GE.U32.AND P1, PT, R0, UR8, PT ;
+        /*0150*/                   UIADD3.X UR5, URZ, UR11, URZ, UP0, !UPT ;
+        /*0160*/                   ULDC UR9, [UR4+0x8], !UPT ;
+        /*0170*/                   ISETP.LT.U32.AND P0, PT, R3, UR9, PT ;
+        /*0180*/                   ULDC.64 UR4, [UR4], !UPT ;
+        /*0190*/               @P0 STG.E [R3.U32+UR4], R2 ;
+        /*01a0*/                   LDG.E R0, [R0.U32+UR6], !P1 ;
+        /*01b0*/                   IADD3 R5, R3, 0x4, RZ ;
+        /*01c0*/                   IADD3 R1, R1, 0x14, RZ ;
+        /*01d0*/                   ISETP.LT.U32.AND P0, PT, R5, UR9, PT ;
+        /*01e0*/                   ISETP.GE.U32.AND P1, PT, R1, UR8, PT ;
+        /*01f0*/                   IADD3 R4, R3, 0x8, RZ ;
+        /*0200*/               @P0 STG.E [R5.U32+UR4], R0 ;
+        /*0210*/                   LDG.E R1, [R1.U32+UR6], !P1 ;
+        /*0220*/                   ISETP.LT.U32.AND P0, PT, R4, UR9, PT ;
+        /*0230*/               @P0 STG.E [R4.U32+UR4], R1 ;
+        /*0240*/                   EXIT ;
+        /*0250*/                   BRA 0x250;
+        /*0260*/                   NOP;
+        /*0270*/                   NOP;
+        /*0280*/                   NOP;
+        /*0290*/                   NOP;
+        /*02a0*/                   NOP;
+        /*02b0*/                   NOP;
+        /*02c0*/                   NOP;
+        /*02d0*/                   NOP;
+        /*02e0*/                   NOP;
+        /*02f0*/                   NOP;
+#endif // 0
+
 VkShaderModule CreateShaderModuleWorking(
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr, 
     VkDevice device, 
     const VkAllocationCallbacks* pAllocator
 );
 
-/*
+#if 0
 ----------------------------------------------------------------------------------------- GLSL code -----------------------------------------------------------------------------------------
 
 #version 450 core
-
-#extension GL_EXT_descriptor_heap : enable
-#extension GL_EXT_nonuniform_qualifier : enable
 
 layout (local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
@@ -527,24 +530,19 @@ struct Output {
     int value6;
 };
 
-layout (descriptor_heap) buffer InputBlock {
+layout (set = 0, binding = 0) buffer InputBlock {
     Input inputValues[];
-} InputBuffers[];
+} InputBuffers;
 
-layout (descriptor_heap) buffer OutputBlock {
+layout (set = 0, binding = 1) buffer OutputBlock {
     Output outputValues[];
-} OutputBuffers[];
-
-layout (push_constant) uniform PushConstantBlock {
-    uint inputBufferIdx;
-    uint outputBufferIdx;
-} PushConstant;
+} OutputBuffers;
 
 void main() {
     uint i = gl_GlobalInvocationID.x;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value2 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.value2;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value3 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.value3;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value6 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.inner2.value6;
+    OutputBuffers.outputValues[i].value2 = InputBuffers.inputValues[i].inner.value2;
+    OutputBuffers.outputValues[i].value3 = InputBuffers.inputValues[i].inner.value3;
+    OutputBuffers.outputValues[i].value6 = InputBuffers.inputValues[i].inner.inner2.value6;
 }
 
 ----------------------------------------------------------------------------------------- SPIR-V code -----------------------------------------------------------------------------------------
@@ -552,36 +550,26 @@ void main() {
 ; SPIR-V
 ; Version: 1.3
 ; Generator: Google Shaderc over Glslang; 11
-; Bound: 83
+; Bound: 51
 ; Schema: 0
                OpCapability Shader
-               OpCapability UntypedPointersKHR
-               OpCapability DescriptorHeapEXT
-               OpExtension "SPV_EXT_descriptor_heap"
-               OpExtension "SPV_KHR_untyped_pointers"
           %1 = OpExtInstImport "GLSL.std.450"
                OpMemoryModel Logical GLSL450
                OpEntryPoint GLCompute %main "main" %gl_GlobalInvocationID
                OpExecutionMode %main LocalSize 16 1 1
                OpSource GLSL 450
-               OpSourceExtension "GL_EXT_descriptor_heap"
-               OpSourceExtension "GL_EXT_nonuniform_qualifier"
                OpSourceExtension "GL_GOOGLE_cpp_style_line_directive"
                OpSourceExtension "GL_GOOGLE_include_directive"
                OpName %main "main"
                OpName %i "i"
                OpName %gl_GlobalInvocationID "gl_GlobalInvocationID"
-               OpName %resource_heap "resource_heap"
-               OpName %PushConstantBlock "PushConstantBlock"
-               OpMemberName %PushConstantBlock 0 "inputBufferIdx"
-               OpMemberName %PushConstantBlock 1 "outputBufferIdx"
-               OpName %PushConstant "PushConstant"
                OpName %Output "Output"
                OpMemberName %Output 0 "value2"
                OpMemberName %Output 1 "value3"
                OpMemberName %Output 2 "value6"
                OpName %OutputBlock "OutputBlock"
                OpMemberName %OutputBlock 0 "outputValues"
+               OpName %OutputBuffers "OutputBuffers"
                OpName %Inner2 "Inner2"
                OpMemberName %Inner2 0 "value4"
                OpMemberName %Inner2 1 "value5"
@@ -595,19 +583,16 @@ void main() {
                OpMemberName %Input 1 "inner"
                OpName %InputBlock "InputBlock"
                OpMemberName %InputBlock 0 "inputValues"
+               OpName %InputBuffers "InputBuffers"
                OpDecorate %gl_GlobalInvocationID BuiltIn GlobalInvocationId
-               OpDecorate %resource_heap BuiltIn ResourceHeapEXT
-               OpDecorateId %_runtimearr_18 ArrayStrideIdEXT %19
-               OpDecorate %PushConstantBlock Block
-               OpMemberDecorate %PushConstantBlock 0 Offset 0
-               OpMemberDecorate %PushConstantBlock 1 Offset 4
                OpMemberDecorate %Output 0 Offset 0
                OpMemberDecorate %Output 1 Offset 4
                OpMemberDecorate %Output 2 Offset 8
                OpDecorate %_runtimearr_Output ArrayStride 12
                OpDecorate %OutputBlock Block
                OpMemberDecorate %OutputBlock 0 Offset 0
-               OpDecorateId %_runtimearr_18_0 ArrayStrideIdEXT %19
+               OpDecorate %OutputBuffers Binding 1
+               OpDecorate %OutputBuffers DescriptorSet 0
                OpMemberDecorate %Inner2 0 Offset 0
                OpMemberDecorate %Inner2 1 Offset 4
                OpMemberDecorate %Inner2 2 Offset 8
@@ -619,6 +604,8 @@ void main() {
                OpDecorate %_runtimearr_Input ArrayStride 24
                OpDecorate %InputBlock Block
                OpMemberDecorate %InputBlock 0 Offset 0
+               OpDecorate %InputBuffers Binding 0
+               OpDecorate %InputBuffers DescriptorSet 0
                OpDecorate %gl_WorkGroupSize BuiltIn WorkgroupSize
        %void = OpTypeVoid
           %3 = OpTypeFunction %void
@@ -629,30 +616,22 @@ void main() {
 %gl_GlobalInvocationID = OpVariable %_ptr_Input_v3uint Input
      %uint_0 = OpConstant %uint 0
 %_ptr_Input_uint = OpTypePointer Input %uint
-%_ptr_UniformConstant = OpTypeUntypedPointerKHR UniformConstant
-%resource_heap = OpUntypedVariableKHR %_ptr_UniformConstant UniformConstant
-         %18 = OpTypeBufferEXT StorageBuffer
-         %19 = OpConstantSizeOfEXT %uint %18
-%_runtimearr_18 = OpTypeRuntimeArray %18
-%PushConstantBlock = OpTypeStruct %uint %uint
-%_ptr_PushConstant_PushConstantBlock = OpTypePointer PushConstant %PushConstantBlock
-%PushConstant = OpVariable %_ptr_PushConstant_PushConstantBlock PushConstant
         %int = OpTypeInt 32 1
-      %int_1 = OpConstant %int 1
-%_ptr_PushConstant_uint = OpTypePointer PushConstant %uint
      %Output = OpTypeStruct %int %int %int
 %_runtimearr_Output = OpTypeRuntimeArray %Output
 %OutputBlock = OpTypeStruct %_runtimearr_Output
+%_ptr_StorageBuffer_OutputBlock = OpTypePointer StorageBuffer %OutputBlock
+%OutputBuffers = OpVariable %_ptr_StorageBuffer_OutputBlock StorageBuffer
       %int_0 = OpConstant %int 0
-%_runtimearr_18_0 = OpTypeRuntimeArray %18
      %Inner2 = OpTypeStruct %int %int %int
       %Inner = OpTypeStruct %int %int %Inner2
       %Input = OpTypeStruct %int %Inner
 %_runtimearr_Input = OpTypeRuntimeArray %Input
  %InputBlock = OpTypeStruct %_runtimearr_Input
 %_ptr_StorageBuffer_InputBlock = OpTypePointer StorageBuffer %InputBlock
+%InputBuffers = OpVariable %_ptr_StorageBuffer_InputBlock StorageBuffer
+      %int_1 = OpConstant %int 1
 %_ptr_StorageBuffer_int = OpTypePointer StorageBuffer %int
-%_ptr_StorageBuffer_OutputBlock = OpTypePointer StorageBuffer %OutputBlock
       %int_2 = OpConstant %int 2
     %uint_16 = OpConstant %uint 16
      %uint_1 = OpConstant %uint 1
@@ -663,52 +642,81 @@ void main() {
          %14 = OpAccessChain %_ptr_Input_uint %gl_GlobalInvocationID %uint_0
          %15 = OpLoad %uint %14
                OpStore %i %15
-         %27 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
-         %28 = OpLoad %uint %27
-         %33 = OpLoad %uint %i
-         %35 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
-         %36 = OpLoad %uint %35
+         %23 = OpLoad %uint %i
+         %31 = OpLoad %uint %i
+         %34 = OpAccessChain %_ptr_StorageBuffer_int %InputBuffers %int_0 %31 %int_1 %int_0
+         %35 = OpLoad %int %34
+         %36 = OpAccessChain %_ptr_StorageBuffer_int %OutputBuffers %int_0 %23 %int_0
+               OpStore %36 %35
+         %37 = OpLoad %uint %i
+         %38 = OpLoad %uint %i
+         %39 = OpAccessChain %_ptr_StorageBuffer_int %InputBuffers %int_0 %38 %int_1 %int_1
+         %40 = OpLoad %int %39
+         %41 = OpAccessChain %_ptr_StorageBuffer_int %OutputBuffers %int_0 %37 %int_1
+               OpStore %41 %40
          %42 = OpLoad %uint %i
-         %43 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %36
-         %45 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %43
-         %47 = OpAccessChain %_ptr_StorageBuffer_int %45 %int_0 %42 %int_1 %int_0
-         %48 = OpLoad %int %47
-         %49 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %28
-         %51 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %49
-         %52 = OpAccessChain %_ptr_StorageBuffer_int %51 %int_0 %33 %int_0
-               OpStore %52 %48
-         %53 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
-         %54 = OpLoad %uint %53
-         %55 = OpLoad %uint %i
-         %56 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
-         %57 = OpLoad %uint %56
-         %58 = OpLoad %uint %i
-         %59 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %57
-         %60 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %59
-         %61 = OpAccessChain %_ptr_StorageBuffer_int %60 %int_0 %58 %int_1 %int_1
-         %62 = OpLoad %int %61
-         %63 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %54
-         %64 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %63
-         %65 = OpAccessChain %_ptr_StorageBuffer_int %64 %int_0 %55 %int_1
-               OpStore %65 %62
-         %66 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
-         %67 = OpLoad %uint %66
-         %68 = OpLoad %uint %i
-         %70 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
-         %71 = OpLoad %uint %70
-         %72 = OpLoad %uint %i
-         %73 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %71
-         %74 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %73
-         %75 = OpAccessChain %_ptr_StorageBuffer_int %74 %int_0 %72 %int_1 %int_2 %int_2
-         %76 = OpLoad %int %75
-         %77 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %67
-         %78 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %77
-         %79 = OpAccessChain %_ptr_StorageBuffer_int %78 %int_0 %68 %int_2
-               OpStore %79 %76
+         %44 = OpLoad %uint %i
+         %45 = OpAccessChain %_ptr_StorageBuffer_int %InputBuffers %int_0 %44 %int_1 %int_2 %int_2
+         %46 = OpLoad %int %45
+         %47 = OpAccessChain %_ptr_StorageBuffer_int %OutputBuffers %int_0 %42 %int_2
+               OpStore %47 %46
                OpReturn
                OpFunctionEnd
 
- */
+----------------------------------------------------------------------------------------- SASS code -----------------------------------------------------------------------------------------
+
+.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
+	.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
+        /*0000*/                   S2R R0, SR_CTAID.X ;
+        /*0010*/                   ULDC.64 UR8, c[0x0][0x20] ;
+        /*0020*/                   USHF.L.U32.HI UR4, URZ, 0x4, UR8 ;
+        /*0030*/                   S2R R1, SR_TID.X ;
+        /*0040*/                   ULDC.64 UR10, c[0x0][0x220] ;
+        /*0050*/                   UIADD3 UR4, UP0, UR4, UR10, URZ ;
+        /*0060*/                   UIADD3.X UR5, URZ, UR11, URZ, UP0, !UPT ;
+        /*0070*/                   ULDC UR8, [UR4+0x8], !UPT ;
+        /*0080*/                   ULDC.64 UR4, [UR4], !UPT ;
+        /*0090*/                   UMOV UR6, UR4 ;
+        /*00a0*/                   IMAD R0, R0, 0x10, R1 ;
+        /*00b0*/                   UMOV UR7, UR5 ;
+        /*00c0*/                   IMAD R1, R0, 0x18, RZ ;
+        /*00d0*/                   IADD3 R2, R1, 0x4, RZ ;
+        /*00e0*/                   ISETP.GE.U32.AND P0, PT, R2, UR8, PT ;
+        /*00f0*/                   LDG.E R2, [R2.U32+UR6], !P0 ;
+        /*0100*/                   USHF.L.U32.HI UR4, URZ, 0x4, UR9 ;
+        /*0110*/                   IMAD R3, R0, 0xc, RZ ;
+        /*0120*/                   IADD3 R0, R1, 0x8, RZ ;
+        /*0130*/                   UIADD3 UR4, UP0, UR4, UR10, URZ ;
+        /*0140*/                   ISETP.GE.U32.AND P1, PT, R0, UR8, PT ;
+        /*0150*/                   UIADD3.X UR5, URZ, UR11, URZ, UP0, !UPT ;
+        /*0160*/                   ULDC UR9, [UR4+0x8], !UPT ;
+        /*0170*/                   ISETP.LT.U32.AND P0, PT, R3, UR9, PT ;
+        /*0180*/                   ULDC.64 UR4, [UR4], !UPT ;
+        /*0190*/               @P0 STG.E [R3.U32+UR4], R2 ;
+        /*01a0*/                   LDG.E R0, [R0.U32+UR6], !P1 ;
+        /*01b0*/                   IADD3 R5, R3, 0x4, RZ ;
+        /*01c0*/                   IADD3 R1, R1, 0x14, RZ ;
+        /*01d0*/                   ISETP.LT.U32.AND P0, PT, R5, UR9, PT ;
+        /*01e0*/                   ISETP.GE.U32.AND P1, PT, R1, UR8, PT ;
+        /*01f0*/                   IADD3 R4, R3, 0x8, RZ ;
+        /*0200*/               @P0 STG.E [R5.U32+UR4], R0 ;
+        /*0210*/                   LDG.E R1, [R1.U32+UR6], !P1 ;
+        /*0220*/                   ISETP.LT.U32.AND P0, PT, R4, UR9, PT ;
+        /*0230*/               @P0 STG.E [R4.U32+UR4], R1 ;
+        /*0240*/                   EXIT ;
+        /*0250*/                   BRA 0x250;
+        /*0260*/                   NOP;
+        /*0270*/                   NOP;
+        /*0280*/                   NOP;
+        /*0290*/                   NOP;
+        /*02a0*/                   NOP;
+        /*02b0*/                   NOP;
+        /*02c0*/                   NOP;
+        /*02d0*/                   NOP;
+        /*02e0*/                   NOP;
+        /*02f0*/                   NOP;
+#endif // 0
+
 VkShaderModule CreateShaderModuleFailing(
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr, 
     VkDevice device, 
@@ -748,6 +756,11 @@ VkPipeline CreateComputePipeline(
     VkShaderModule shaderModule, 
     bool isPipelineBinarySupported,
     const char* cubinDumpFilename,
+    std::uint32_t heapOffset,
+    std::uint32_t heapIndexStride,
+    std::uint32_t heapArrayStride,
+    std::uint32_t binding0PushIndexOffset,
+    std::uint32_t binding1PushIndexOffset,
     const VkAllocationCallbacks* pAllocator
 );
 
@@ -797,8 +810,32 @@ int main() {
 	const auto bufferResourceHeap = CreateBufferResourceHeap(vkGetInstanceProcAddr, instance, vkGetDeviceProcAddr, device, physicalDevice, resourceHeapBufferSize, pAllocator);
 	const auto workingShaderModule = CreateShaderModuleWorking(vkGetDeviceProcAddr, device, pAllocator);
     const auto failingShaderModule = CreateShaderModuleFailing(vkGetDeviceProcAddr, device, pAllocator);
-    const auto workingPipeline = CreateComputePipeline(vkGetDeviceProcAddr, device, workingShaderModule, isPipelineBinarySupported, "working.cubin", pAllocator);
-    const auto failingPipeline = CreateComputePipeline(vkGetDeviceProcAddr, device, failingShaderModule, isPipelineBinarySupported, "failing.cubin", pAllocator);
+    const auto workingPipeline = CreateComputePipeline(
+    	vkGetDeviceProcAddr, 
+    	device, 
+    	workingShaderModule, 
+    	isPipelineBinarySupported,
+    	"working.cubin",
+        0,
+         static_cast<std::uint32_t>(descriptorHeapProperties.bufferDescriptorSize),
+        static_cast<std::uint32_t>(descriptorHeapProperties.bufferDescriptorSize),
+        0,
+        4,
+    	pAllocator
+    );
+    const auto failingPipeline = CreateComputePipeline(
+    	vkGetDeviceProcAddr, 
+    	device, 
+    	failingShaderModule, 
+    	isPipelineBinarySupported, 
+    	"failing.cubin", 
+    	0,
+         static_cast<std::uint32_t>(descriptorHeapProperties.bufferDescriptorSize),
+        static_cast<std::uint32_t>(descriptorHeapProperties.bufferDescriptorSize),
+        0,
+        4,
+    	pAllocator
+    );
 
     // Fill buffers
     {
@@ -1684,7 +1721,7 @@ VkShaderModule CreateShaderModuleWorking(
     const VkDevice device, 
     const VkAllocationCallbacks *const pAllocator
 ) {
-    return CreateShaderModule(vkGetDeviceProcAddr, device, TEST_WORKING_SHADER_SPIRV_FILEPATH, pAllocator);
+    return CreateShaderModule(vkGetDeviceProcAddr, device, WORKING_SHADER_SPIRV_FILEPATH, pAllocator);
 }
 
 VkShaderModule CreateShaderModuleFailing(
@@ -1692,7 +1729,7 @@ VkShaderModule CreateShaderModuleFailing(
     const VkDevice device, 
     const VkAllocationCallbacks *const pAllocator
 ) {
-    return CreateShaderModule(vkGetDeviceProcAddr, device, TEST_FAILING_SHADER_SPIRV_FILEPATH, pAllocator);
+    return CreateShaderModule(vkGetDeviceProcAddr, device, FAILING_SHADER_SPIRV_FILEPATH, pAllocator);
 }
 
 void DestroyShaderModule(
@@ -1871,8 +1908,8 @@ void DumpCubinFromPipeline(
             std::vector<std::uint8_t> binBytes(binDataSize);
             vkGetPipelineBinaryDataKHR(device, &binDataInfo, &binKey, &binDataSize, binBytes.data());
 
-            std::filesystem::create_directories("dump_cubin");
-            const std::filesystem::path outPath = std::filesystem::path("dump_cubin") / cubinDumpFilename;
+            std::filesystem::create_directories(PROJECT_ROOT "\\shaders\\shader_mapping");
+            const std::filesystem::path outPath = std::filesystem::path(PROJECT_ROOT "\\shaders\\shader_mapping") / cubinDumpFilename;
 
             std::string failureReason;
             const bool success = ExtractCubinFromBinaryData(binBytes, outPath, failureReason);
@@ -1897,6 +1934,11 @@ VkPipeline CreateComputePipeline(
     const VkShaderModule shaderModule, 
     const bool isPipelineBinarySupported,
     const char *const cubinDumpFilename,
+    const std::uint32_t heapOffset,
+    const std::uint32_t heapIndexStride,
+    const std::uint32_t heapArrayStride,
+    const std::uint32_t binding0PushIndexOffset,
+    const std::uint32_t binding1PushIndexOffset,
     const VkAllocationCallbacks *const pAllocator
 ) {
 	const auto vkCreateComputePipelines = reinterpret_cast<PFN_vkCreateComputePipelines>(vkGetDeviceProcAddr(device, "vkCreateComputePipelines"));
@@ -1911,13 +1953,71 @@ VkPipeline CreateComputePipeline(
         .pNext = nullptr,
         .flags = pipelineFlags,
     };
+    const VkDescriptorMappingSourcePushIndexEXT descriptorMappingSourcePushIndexBinding0{
+	    .heapOffset = heapOffset,
+        .pushOffset = binding0PushIndexOffset,
+        .heapIndexStride = heapIndexStride,
+        .heapArrayStride = heapArrayStride,
+        .pEmbeddedSampler = nullptr,
+        .useCombinedImageSamplerIndex = VK_FALSE,
+        .samplerHeapOffset = 0,
+        .samplerPushOffset = 0,
+        .samplerHeapIndexStride = 0,
+        .samplerHeapArrayStride = 0,
+    };
+    const VkDescriptorMappingSourcePushIndexEXT descriptorMappingSourcePushIndexBinding1{
+	    .heapOffset = heapOffset,
+        .pushOffset = binding1PushIndexOffset,
+        .heapIndexStride = heapIndexStride,
+        .heapArrayStride = heapArrayStride,
+        .pEmbeddedSampler = nullptr,
+        .useCombinedImageSamplerIndex = VK_FALSE,
+        .samplerHeapOffset = 0,
+        .samplerPushOffset = 0,
+        .samplerHeapIndexStride = 0,
+        .samplerHeapArrayStride = 0,
+    };
+    const VkDescriptorSetAndBindingMappingEXT descriptorSetAndBindingMappingBinding0{
+	    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_AND_BINDING_MAPPING_EXT,
+        .pNext = nullptr,
+        .descriptorSet = 0,
+        .firstBinding = 0,
+        .bindingCount = 1,
+        .resourceMask = VK_SPIRV_RESOURCE_TYPE_READ_WRITE_STORAGE_BUFFER_BIT_EXT,
+        .source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT,
+        .sourceData = VkDescriptorMappingSourceDataEXT{
+		    .pushIndex = descriptorMappingSourcePushIndexBinding0,
+	    },
+    };
+    const VkDescriptorSetAndBindingMappingEXT descriptorSetAndBindingMappingBinding1{
+	    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_AND_BINDING_MAPPING_EXT,
+        .pNext = nullptr,
+        .descriptorSet = 0,
+        .firstBinding = 1,
+        .bindingCount = 1,
+        .resourceMask = VK_SPIRV_RESOURCE_TYPE_READ_WRITE_STORAGE_BUFFER_BIT_EXT,
+        .source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT,
+        .sourceData = VkDescriptorMappingSourceDataEXT{
+		    .pushIndex = descriptorMappingSourcePushIndexBinding1,
+	    },
+    };
+    const VkDescriptorSetAndBindingMappingEXT descriptorSetAndBindingMappings[] = {
+	    descriptorSetAndBindingMappingBinding0,
+        descriptorSetAndBindingMappingBinding1,
+    };
+    const VkShaderDescriptorSetAndBindingMappingInfoEXT descriptorSetAndBindingMappingInfo{
+	    .sType = VK_STRUCTURE_TYPE_SHADER_DESCRIPTOR_SET_AND_BINDING_MAPPING_INFO_EXT,
+        .pNext = nullptr,
+        .mappingCount = static_cast<std::uint32_t>(std::size(descriptorSetAndBindingMappings)),
+        .pMappings = descriptorSetAndBindingMappings,
+    };
     const VkComputePipelineCreateInfo computePipelineCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
         .pNext = &pipelineCreateFlags2,
         .flags = 0,
         .stage = VkPipelineShaderStageCreateInfo{
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .pNext = nullptr,
+            .pNext = &descriptorSetAndBindingMappingInfo,
             .flags = 0,
             .stage = VK_SHADER_STAGE_COMPUTE_BIT,
             .module = shaderModule,
