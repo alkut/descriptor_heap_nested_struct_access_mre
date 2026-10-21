@@ -1,8 +1,5 @@
 CMakeLists.txt.user
 
-# Compiled shaders
-shaders/compiled/
-
 !resourcs/models/**/*.obj
 examples/**/logs/*.log
 
@@ -29,9 +26,6 @@ docs/Doxyfile
 # Build Artifacts
 bin/
 lib/
-
-# Compiled Shaders
-*.spv
 
 # Compiled Object files
 *.slo

@@ -1,7 +1,10 @@
 #include "vulkan/vulkan_core.h"
+#include "zstd.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <string>
 #include <filesystem>
 #include <fstream>
 #include <ranges>
@@ -127,11 +130,19 @@ std::uint32_t GetQueueFamilyIndex(
     VkPhysicalDevice physicalDevice
 );
 
+bool IsDeviceExtensionSupported(
+    PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr, 
+    VkInstance instance, 
+    VkPhysicalDevice physicalDevice, 
+    const char* extensionName
+);
+
 VkDevice CreateDevice(
     PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr, 
     VkInstance instance, 
     VkPhysicalDevice physicalDevice, 
     std::uint32_t queueFamilyIndex, 
+    bool isPipelineBinarySupported,
     const VkAllocationCallbacks* pAllocator
 );
 
@@ -711,10 +722,32 @@ void DestroyShaderModule(
     const VkAllocationCallbacks* pAllocator
 );
 
+bool ExtractFromDecompressedContainer(
+    std::span<const std::uint8_t> data,
+    const std::filesystem::path& outPath,
+    std::string& failureReason
+);
+
+bool ExtractCubinFromBinaryData(
+    std::span<const std::uint8_t> data,
+    const std::filesystem::path& outPath,
+    std::string& failureReason
+);
+
+void DumpCubinFromPipeline(
+    PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr,
+    VkDevice device,
+    VkPipeline pipeline,
+    const char* cubinDumpFilename,
+    const VkAllocationCallbacks* pAllocator
+);
+
 VkPipeline CreateComputePipeline(
     PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr, 
     VkDevice device, 
     VkShaderModule shaderModule, 
+    bool isPipelineBinarySupported,
+    const char* cubinDumpFilename,
     const VkAllocationCallbacks* pAllocator
 );
 
@@ -745,7 +778,8 @@ int main() {
     const auto resourceHeapBufferFirstBufferDescriptorIndex = resourceHeapBufferDescriptorsOffset / descriptorHeapProperties.bufferDescriptorSize;
     const auto resourceHeapBufferSize = resourceHeapBufferDescriptorsOffset + 4 * descriptorHeapProperties.bufferDescriptorSize;
     const auto queueFamilyIndex = GetQueueFamilyIndex(vkGetInstanceProcAddr, instance, physicalDevice);
-    const auto device = CreateDevice(vkGetInstanceProcAddr, instance, physicalDevice, queueFamilyIndex, pAllocator);
+    const bool isPipelineBinarySupported = IsDeviceExtensionSupported(vkGetInstanceProcAddr, instance, physicalDevice, VK_KHR_PIPELINE_BINARY_EXTENSION_NAME);
+    const auto device = CreateDevice(vkGetInstanceProcAddr, instance, physicalDevice, queueFamilyIndex, isPipelineBinarySupported, pAllocator);
     const auto vkGetDeviceProcAddr = reinterpret_cast<PFN_vkGetDeviceProcAddr>(vkGetInstanceProcAddr(instance, "vkGetDeviceProcAddr"));
     ASSERT(vkGetDeviceProcAddr != nullptr, 56, "Failed to get instance function pointer vkGetDeviceProcAddr");
     const auto queue = GetQueue(vkGetDeviceProcAddr, device, queueFamilyIndex);
@@ -763,8 +797,8 @@ int main() {
 	const auto bufferResourceHeap = CreateBufferResourceHeap(vkGetInstanceProcAddr, instance, vkGetDeviceProcAddr, device, physicalDevice, resourceHeapBufferSize, pAllocator);
 	const auto workingShaderModule = CreateShaderModuleWorking(vkGetDeviceProcAddr, device, pAllocator);
     const auto failingShaderModule = CreateShaderModuleFailing(vkGetDeviceProcAddr, device, pAllocator);
-    const auto workingPipeline = CreateComputePipeline(vkGetDeviceProcAddr, device, workingShaderModule, pAllocator);
-    const auto failingPipeline = CreateComputePipeline(vkGetDeviceProcAddr, device, failingShaderModule, pAllocator);
+    const auto workingPipeline = CreateComputePipeline(vkGetDeviceProcAddr, device, workingShaderModule, isPipelineBinarySupported, "working.cubin", pAllocator);
+    const auto failingPipeline = CreateComputePipeline(vkGetDeviceProcAddr, device, failingShaderModule, isPipelineBinarySupported, "failing.cubin", pAllocator);
 
     // Fill buffers
     {
@@ -1162,11 +1196,39 @@ std::uint32_t GetQueueFamilyIndex(
     ASSERT(false, 15, "Failed to find queue family with compute support!");
 }
 
+bool IsDeviceExtensionSupported(
+    const PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr, 
+    const VkInstance instance, 
+    const VkPhysicalDevice physicalDevice, 
+    const char *const extensionName
+) {
+    const auto vkEnumerateDeviceExtensionProperties = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(
+        vkGetInstanceProcAddr(instance, "vkEnumerateDeviceExtensionProperties")
+    );
+    ASSERT(vkEnumerateDeviceExtensionProperties != nullptr, 80, "Failed to get instance function pointer vkEnumerateDeviceExtensionProperties");
+    std::uint32_t extensionCount = 0;
+    VkResult res = vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
+    ASSERT(res == VK_SUCCESS, 81, "Failed to get extension count, result code: %i", res);
+    if (extensionCount == 0) {
+        return false;
+    }
+    std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+    res = vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, availableExtensions.data());
+    ASSERT(res == VK_SUCCESS, 82, "Failed to enumerate extensions, result code: %i", res);
+    for (const auto& ext : availableExtensions) {
+        if (std::strcmp(ext.extensionName, extensionName) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 VkDevice CreateDevice(
     const PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr, 
     const VkInstance instance, 
     const VkPhysicalDevice physicalDevice, 
     const std::uint32_t queueFamilyIndex, 
+    const bool isPipelineBinarySupported,
     const VkAllocationCallbacks *const pAllocator
 ) {
     const auto vkCreateDevice = reinterpret_cast<PFN_vkCreateDevice>(vkGetInstanceProcAddr(instance, "vkCreateDevice"));
@@ -1181,7 +1243,7 @@ VkDevice CreateDevice(
             .pQueuePriorities = &kQueuePriority,
     };
     const VkPhysicalDeviceFeatures enabledVulkan10Features{};
-    constexpr const char* deviceExtensions[] = {
+    std::vector<const char*> deviceExtensions = {
         VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,
         VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME,
         VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
@@ -1190,9 +1252,17 @@ VkDevice CreateDevice(
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME,
     };
+    if (isPipelineBinarySupported) {
+        deviceExtensions.push_back(VK_KHR_PIPELINE_BINARY_EXTENSION_NAME);
+    }
+    VkPhysicalDevicePipelineBinaryFeaturesKHR pipelineBinaryFeatures{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_BINARY_FEATURES_KHR,
+        .pNext = nullptr,
+        .pipelineBinaries = VK_TRUE,
+    };
     VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
-        .pNext = nullptr,
+        .pNext = isPipelineBinarySupported ? &pipelineBinaryFeatures : nullptr,
         .bufferDeviceAddress = VK_TRUE,
         .bufferDeviceAddressCaptureReplay = VK_FALSE,
 		.bufferDeviceAddressMultiDevice = VK_FALSE,
@@ -1216,8 +1286,8 @@ VkDevice CreateDevice(
             .pQueueCreateInfos = &deviceQueueCreateInfo,
             .enabledLayerCount = 0,
             .ppEnabledLayerNames = nullptr,
-            .enabledExtensionCount = std::size(deviceExtensions),
-            .ppEnabledExtensionNames = deviceExtensions,
+            .enabledExtensionCount = static_cast<std::uint32_t>(deviceExtensions.size()),
+            .ppEnabledExtensionNames = deviceExtensions.data(),
             .pEnabledFeatures = &enabledVulkan10Features,
     };
     VkDevice device;
@@ -1636,18 +1706,210 @@ void DestroyShaderModule(
     vkDestroyShaderModule(device, shaderModule, pAllocator);
 }
 
+bool ExtractFromDecompressedContainer(
+    const std::span<const std::uint8_t> data,
+    const std::filesystem::path& outPath,
+    std::string& failureReason
+) {
+    for (std::size_t i = 0; i + 4 <= data.size(); ++i) {
+        if (data[i] == 0x7f && data[i + 1] == 'E' && data[i + 2] == 'L' && data[i + 3] == 'F') {
+            std::ofstream out(outPath, std::ios::binary);
+            if (!out.is_open()) {
+                failureReason = "Failed to open output file for writing: " + outPath.string();
+                return false;
+            }
+            out.write(reinterpret_cast<const char*>(data.data() + i), static_cast<std::streamsize>(data.size() - i));
+            return true;
+        }
+    }
+
+    for (std::size_t i = 0; i + 4 <= data.size(); ++i) {
+        if (data[i] == 'N' && data[i + 1] == 'V' && data[i + 2] == 'u' && data[i + 3] == 'c') {
+            const std::uint8_t* nvuc = data.data() + i;
+            for (int s = 0; s < 16; ++s) {
+                const std::size_t secHeaderOffset = i + 0x40 + s * 32;
+                if (secHeaderOffset + 32 > data.size()) {
+                    break;
+                }
+                const auto secType = *reinterpret_cast<const std::uint32_t*>(data.data() + secHeaderOffset);
+                const auto secSize = *reinterpret_cast<const std::uint32_t*>(data.data() + secHeaderOffset + 4);
+                const auto secDataOffset = *reinterpret_cast<const std::uint32_t*>(data.data() + secHeaderOffset + 8);
+                // Section type 1 is Code Section (SASS machine instructions)
+                if (secType == 1 && secSize > 0 && i + secDataOffset + secSize <= data.size()) {
+                    std::ofstream out(outPath, std::ios::binary);
+                    if (!out.is_open()) {
+                        failureReason = "Failed to open output file for writing: " + outPath.string();
+                        return false;
+                    }
+                    out.write(reinterpret_cast<const char*>(nvuc + secDataOffset), secSize);
+                    return true;
+                }
+            }
+            std::ofstream out(outPath, std::ios::binary);
+            if (!out.is_open()) {
+                failureReason = "Failed to open output file for writing: " + outPath.string();
+                return false;
+            }
+            out.write(reinterpret_cast<const char*>(nvuc), static_cast<std::streamsize>(data.size() - i));
+            return true;
+        }
+    }
+
+    failureReason = "Decompressed data contains neither ELF nor NVuc magic";
+    return false;
+}
+
+bool ExtractCubinFromBinaryData(
+    const std::span<const std::uint8_t> data,
+    const std::filesystem::path& outPath,
+    std::string& failureReason
+) {
+    if (data.size() < 4) {
+        failureReason = "Binary data is too small (< 4 bytes)";
+        return false;
+    }
+
+    if (ExtractFromDecompressedContainer(data, outPath, failureReason)) {
+        return true;
+    }
+
+    for (std::size_t i = 0; i + 4 <= data.size(); ++i) {
+        if (data[i] == 0x28 && data[i + 1] == 0xb5 && data[i + 2] == 0x2f && data[i + 3] == 0xfd) {
+            const void* const zstdSrc = data.data() + i;
+            const std::size_t zstdSrcSize = data.size() - i;
+            unsigned long long decompSize = ZSTD_getFrameContentSize(zstdSrc, zstdSrcSize);
+            if (decompSize == ZSTD_CONTENTSIZE_ERROR || decompSize == ZSTD_CONTENTSIZE_UNKNOWN) {
+                if (i >= 4) {
+                    const auto prefixSize = *reinterpret_cast<const std::uint32_t*>(data.data() + i - 4);
+                    if (prefixSize > 0 && prefixSize < 128 * 1024 * 1024) {
+                        decompSize = prefixSize;
+                    }
+                }
+                if (decompSize == ZSTD_CONTENTSIZE_ERROR || decompSize == ZSTD_CONTENTSIZE_UNKNOWN) {
+                    decompSize = 256 * 1024;
+                }
+            }
+            std::vector<std::uint8_t> decompressed(static_cast<std::size_t>(decompSize));
+            const std::size_t decompResult = ZSTD_decompress(
+                decompressed.data(), 
+                decompressed.size(), 
+                zstdSrc, 
+                zstdSrcSize
+            );
+            if (ZSTD_isError(decompResult)) {
+                failureReason = std::string("Zstandard decompression failed: ") + ZSTD_getErrorName(decompResult);
+                return false;
+            }
+            decompressed.resize(decompResult);
+
+            return ExtractFromDecompressedContainer(decompressed, outPath, failureReason);
+        }
+    }
+
+    failureReason = "Magic signature not found (neither uncompressed ELF/NVuc nor Zstandard frame present)";
+    return false;
+}
+
+void DumpCubinFromPipeline(
+    const PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr,
+    const VkDevice device,
+    const VkPipeline pipeline,
+    const char *const cubinDumpFilename,
+    const VkAllocationCallbacks *const pAllocator
+) {
+    const auto vkCreatePipelineBinariesKHR = reinterpret_cast<PFN_vkCreatePipelineBinariesKHR>(vkGetDeviceProcAddr(device, "vkCreatePipelineBinariesKHR"));
+    const auto vkGetPipelineBinaryDataKHR = reinterpret_cast<PFN_vkGetPipelineBinaryDataKHR>(vkGetDeviceProcAddr(device, "vkGetPipelineBinaryDataKHR"));
+    const auto vkDestroyPipelineBinaryKHR = reinterpret_cast<PFN_vkDestroyPipelineBinaryKHR>(vkGetDeviceProcAddr(device, "vkDestroyPipelineBinaryKHR"));
+
+    if (vkCreatePipelineBinariesKHR == nullptr || vkGetPipelineBinaryDataKHR == nullptr) {
+        std::printf("[Pipeline Binary] Failed to get function pointers for %s\n", VK_KHR_PIPELINE_BINARY_EXTENSION_NAME);
+        return;
+    }
+
+    const VkPipelineBinaryCreateInfoKHR binaryCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_BINARY_CREATE_INFO_KHR,
+        .pNext = nullptr,
+        .pKeysAndDataInfo = nullptr,
+        .pipeline = pipeline,
+        .pPipelineCreateInfo = nullptr,
+    };
+    VkPipelineBinaryHandlesInfoKHR handlesInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_BINARY_HANDLES_INFO_KHR,
+        .pNext = nullptr,
+        .pipelineBinaryCount = 0,
+        .pPipelineBinaries = nullptr,
+    };
+    VkResult binRes = vkCreatePipelineBinariesKHR(device, &binaryCreateInfo, pAllocator, &handlesInfo);
+    if (binRes != VK_SUCCESS || handlesInfo.pipelineBinaryCount == 0) {
+        std::printf("[Pipeline Binary] Failed to query pipeline binaries count for \"%s\", result code: %i\n", cubinDumpFilename, binRes);
+        return;
+    }
+
+    std::vector<VkPipelineBinaryKHR> binHandles(handlesInfo.pipelineBinaryCount);
+    handlesInfo.pPipelineBinaries = binHandles.data();
+    binRes = vkCreatePipelineBinariesKHR(device, &binaryCreateInfo, pAllocator, &handlesInfo);
+    if (binRes != VK_SUCCESS) {
+        std::printf("[Pipeline Binary] Failed to create pipeline binaries for \"%s\", result code: %i\n", cubinDumpFilename, binRes);
+        return;
+    }
+
+    for (std::uint32_t i = 0; i < handlesInfo.pipelineBinaryCount; ++i) {
+        VkPipelineBinaryKeyKHR binKey{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_BINARY_KEY_KHR,
+            .pNext = nullptr,
+            .keySize = 0,
+            .key = {},
+        };
+        const VkPipelineBinaryDataInfoKHR binDataInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_BINARY_DATA_INFO_KHR,
+            .pNext = nullptr,
+            .pipelineBinary = binHandles[i],
+        };
+        std::size_t binDataSize = 0;
+        vkGetPipelineBinaryDataKHR(device, &binDataInfo, &binKey, &binDataSize, nullptr);
+        if (binDataSize > 0) {
+            std::vector<std::uint8_t> binBytes(binDataSize);
+            vkGetPipelineBinaryDataKHR(device, &binDataInfo, &binKey, &binDataSize, binBytes.data());
+
+            std::filesystem::create_directories("dump_cubin");
+            const std::filesystem::path outPath = std::filesystem::path("dump_cubin") / cubinDumpFilename;
+
+            std::string failureReason;
+            const bool success = ExtractCubinFromBinaryData(binBytes, outPath, failureReason);
+            if (success) {
+                std::printf("[Pipeline Binary] Successfully extracted cubin to \"%s\"\n", outPath.string().c_str());
+            } else {
+                std::printf("[Pipeline Binary] Failed to extract cubin to \"%s\": %s\n", outPath.string().c_str(), failureReason.c_str());
+            }
+        } else {
+            std::printf("[Pipeline Binary] Binary data size is 0 for \"%s\"\n", cubinDumpFilename);
+        }
+
+        if (vkDestroyPipelineBinaryKHR != nullptr) {
+            vkDestroyPipelineBinaryKHR(device, binHandles[i], pAllocator);
+        }
+    }
+}
+
 VkPipeline CreateComputePipeline(
     const PFN_vkGetDeviceProcAddr vkGetDeviceProcAddr, 
     const VkDevice device, 
     const VkShaderModule shaderModule, 
+    const bool isPipelineBinarySupported,
+    const char *const cubinDumpFilename,
     const VkAllocationCallbacks *const pAllocator
 ) {
 	const auto vkCreateComputePipelines = reinterpret_cast<PFN_vkCreateComputePipelines>(vkGetDeviceProcAddr(device, "vkCreateComputePipelines"));
     ASSERT(vkCreateComputePipelines != nullptr, 51, "Failed to get device function pointer vkCreateComputePipelines");
+
+    VkPipelineCreateFlags2KHR pipelineFlags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+    if (isPipelineBinarySupported) {
+        pipelineFlags |= VK_PIPELINE_CREATE_2_CAPTURE_DATA_BIT_KHR;
+    }
     const VkPipelineCreateFlags2CreateInfo pipelineCreateFlags2{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO,
         .pNext = nullptr,
-        .flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT,
+        .flags = pipelineFlags,
     };
     const VkComputePipelineCreateInfo computePipelineCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
@@ -1669,6 +1931,16 @@ VkPipeline CreateComputePipeline(
     VkPipeline computePipeline = VK_NULL_HANDLE;
     const VkResult createComputePipelineResult = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, pAllocator, &computePipeline);
     ASSERT(createComputePipelineResult == VK_SUCCESS, 52, "Failed to create compute pipeline, result code: %i", createComputePipelineResult);
+
+    if (cubinDumpFilename != nullptr) {
+        if (!isPipelineBinarySupported) {
+            std::printf("[Pipeline Binary] Device extension %s is not supported, skipping cubin dump for \"%s\"\n", 
+                VK_KHR_PIPELINE_BINARY_EXTENSION_NAME, cubinDumpFilename);
+        } else {
+            DumpCubinFromPipeline(vkGetDeviceProcAddr, device, computePipeline, cubinDumpFilename, pAllocator);
+        }
+    }
+
 	return computePipeline;
 }
 
@@ -1696,12 +1968,12 @@ void VerifyOutput(
         allShifted &= isShifted;
     }
     if (allOk) {
-        printf("all ok for \"%s\"\n", name);
+        std::printf("all ok for \"%s\"\n", name);
         return;
     }
     if (allShifted) {
-	    printf("failed: mismatch pattern like offset of inner struct is ignored for \"%s\"\n", name);
+	    std::printf("failed: mismatch pattern like offset of inner struct is ignored for \"%s\"\n", name);
         return;
     }
-    printf("failed: unknown mismatch pattern for \"%s\"\n", name);
+    std::printf("failed: unknown mismatch pattern for \"%s\"\n", name);
 }

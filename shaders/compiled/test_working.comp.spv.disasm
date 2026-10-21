@@ -1,0 +1,151 @@
+; SPIR-V
+; Version: 1.3
+; Generator: Google Shaderc over Glslang; 11
+; Bound: 82
+; Schema: 0
+               OpCapability Shader
+               OpCapability UntypedPointersKHR
+               OpCapability DescriptorHeapEXT
+               OpExtension "SPV_EXT_descriptor_heap"
+               OpExtension "SPV_KHR_untyped_pointers"
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main" %gl_GlobalInvocationID
+               OpExecutionMode %main LocalSize 16 1 1
+               OpSource GLSL 450
+               OpSourceExtension "GL_EXT_descriptor_heap"
+               OpSourceExtension "GL_EXT_nonuniform_qualifier"
+               OpSourceExtension "GL_GOOGLE_cpp_style_line_directive"
+               OpSourceExtension "GL_GOOGLE_include_directive"
+               OpName %main "main"
+               OpName %i "i"
+               OpName %gl_GlobalInvocationID "gl_GlobalInvocationID"
+               OpName %resource_heap "resource_heap"
+               OpName %PushConstantBlock "PushConstantBlock"
+               OpMemberName %PushConstantBlock 0 "inputBufferIdx"
+               OpMemberName %PushConstantBlock 1 "outputBufferIdx"
+               OpName %PushConstant "PushConstant"
+               OpName %Output "Output"
+               OpMemberName %Output 0 "value2"
+               OpMemberName %Output 1 "value3"
+               OpMemberName %Output 2 "value6"
+               OpName %OutputBlock "OutputBlock"
+               OpMemberName %OutputBlock 0 "outputValues"
+               OpName %Input "Input"
+               OpMemberName %Input 0 "value1"
+               OpMemberName %Input 1 "value2"
+               OpMemberName %Input 2 "value3"
+               OpMemberName %Input 3 "value4"
+               OpMemberName %Input 4 "value5"
+               OpMemberName %Input 5 "value6"
+               OpName %InputBlock "InputBlock"
+               OpMemberName %InputBlock 0 "inputValues"
+               OpDecorate %gl_GlobalInvocationID BuiltIn GlobalInvocationId
+               OpDecorate %resource_heap BuiltIn ResourceHeapEXT
+               OpDecorateId %_runtimearr_18 ArrayStrideIdEXT %19
+               OpDecorate %PushConstantBlock Block
+               OpMemberDecorate %PushConstantBlock 0 Offset 0
+               OpMemberDecorate %PushConstantBlock 1 Offset 4
+               OpMemberDecorate %Output 0 Offset 0
+               OpMemberDecorate %Output 1 Offset 4
+               OpMemberDecorate %Output 2 Offset 8
+               OpDecorate %_runtimearr_Output ArrayStride 12
+               OpDecorate %OutputBlock Block
+               OpMemberDecorate %OutputBlock 0 Offset 0
+               OpDecorateId %_runtimearr_18_0 ArrayStrideIdEXT %19
+               OpMemberDecorate %Input 0 Offset 0
+               OpMemberDecorate %Input 1 Offset 4
+               OpMemberDecorate %Input 2 Offset 8
+               OpMemberDecorate %Input 3 Offset 12
+               OpMemberDecorate %Input 4 Offset 16
+               OpMemberDecorate %Input 5 Offset 20
+               OpDecorate %_runtimearr_Input ArrayStride 24
+               OpDecorate %InputBlock Block
+               OpMemberDecorate %InputBlock 0 Offset 0
+               OpDecorate %gl_WorkGroupSize BuiltIn WorkgroupSize
+       %void = OpTypeVoid
+          %3 = OpTypeFunction %void
+       %uint = OpTypeInt 32 0
+%_ptr_Function_uint = OpTypePointer Function %uint
+     %v3uint = OpTypeVector %uint 3
+%_ptr_Input_v3uint = OpTypePointer Input %v3uint
+%gl_GlobalInvocationID = OpVariable %_ptr_Input_v3uint Input
+     %uint_0 = OpConstant %uint 0
+%_ptr_Input_uint = OpTypePointer Input %uint
+%_ptr_UniformConstant = OpTypeUntypedPointerKHR UniformConstant
+%resource_heap = OpUntypedVariableKHR %_ptr_UniformConstant UniformConstant
+         %18 = OpTypeBufferEXT StorageBuffer
+         %19 = OpConstantSizeOfEXT %uint %18
+%_runtimearr_18 = OpTypeRuntimeArray %18
+%PushConstantBlock = OpTypeStruct %uint %uint
+%_ptr_PushConstant_PushConstantBlock = OpTypePointer PushConstant %PushConstantBlock
+%PushConstant = OpVariable %_ptr_PushConstant_PushConstantBlock PushConstant
+        %int = OpTypeInt 32 1
+      %int_1 = OpConstant %int 1
+%_ptr_PushConstant_uint = OpTypePointer PushConstant %uint
+     %Output = OpTypeStruct %int %int %int
+%_runtimearr_Output = OpTypeRuntimeArray %Output
+%OutputBlock = OpTypeStruct %_runtimearr_Output
+      %int_0 = OpConstant %int 0
+%_runtimearr_18_0 = OpTypeRuntimeArray %18
+      %Input = OpTypeStruct %int %int %int %int %int %int
+%_runtimearr_Input = OpTypeRuntimeArray %Input
+ %InputBlock = OpTypeStruct %_runtimearr_Input
+%_ptr_StorageBuffer_InputBlock = OpTypePointer StorageBuffer %InputBlock
+%_ptr_StorageBuffer_int = OpTypePointer StorageBuffer %int
+%_ptr_StorageBuffer_OutputBlock = OpTypePointer StorageBuffer %OutputBlock
+      %int_2 = OpConstant %int 2
+      %int_5 = OpConstant %int 5
+    %uint_16 = OpConstant %uint 16
+     %uint_1 = OpConstant %uint 1
+%gl_WorkGroupSize = OpConstantComposite %v3uint %uint_16 %uint_1 %uint_1
+       %main = OpFunction %void None %3
+          %5 = OpLabel
+          %i = OpVariable %_ptr_Function_uint Function
+         %14 = OpAccessChain %_ptr_Input_uint %gl_GlobalInvocationID %uint_0
+         %15 = OpLoad %uint %14
+               OpStore %i %15
+         %27 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
+         %28 = OpLoad %uint %27
+         %33 = OpLoad %uint %i
+         %35 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
+         %36 = OpLoad %uint %35
+         %40 = OpLoad %uint %i
+         %41 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %36
+         %43 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %41
+         %45 = OpAccessChain %_ptr_StorageBuffer_int %43 %int_0 %40 %int_1
+         %46 = OpLoad %int %45
+         %47 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %28
+         %49 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %47
+         %50 = OpAccessChain %_ptr_StorageBuffer_int %49 %int_0 %33 %int_0
+               OpStore %50 %46
+         %51 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
+         %52 = OpLoad %uint %51
+         %53 = OpLoad %uint %i
+         %54 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
+         %55 = OpLoad %uint %54
+         %56 = OpLoad %uint %i
+         %58 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %55
+         %59 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %58
+         %60 = OpAccessChain %_ptr_StorageBuffer_int %59 %int_0 %56 %int_2
+         %61 = OpLoad %int %60
+         %62 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %52
+         %63 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %62
+         %64 = OpAccessChain %_ptr_StorageBuffer_int %63 %int_0 %53 %int_1
+               OpStore %64 %61
+         %65 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
+         %66 = OpLoad %uint %65
+         %67 = OpLoad %uint %i
+         %68 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
+         %69 = OpLoad %uint %68
+         %70 = OpLoad %uint %i
+         %72 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %69
+         %73 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %72
+         %74 = OpAccessChain %_ptr_StorageBuffer_int %73 %int_0 %70 %int_5
+         %75 = OpLoad %int %74
+         %76 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %66
+         %77 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %76
+         %78 = OpAccessChain %_ptr_StorageBuffer_int %77 %int_0 %67 %int_2
+               OpStore %78 %75
+               OpReturn
+               OpFunctionEnd
