@@ -890,11 +890,6 @@ VkPipeline CreateComputePipeline(
     VkShaderModule shaderModule, 
     bool isPipelineBinarySupported,
     const char* cubinDumpFilename,
-    std::uint32_t heapOffset,
-    std::uint32_t heapIndexStride,
-    std::uint32_t heapArrayStride,
-    std::uint32_t binding0PushIndexOffset,
-    std::uint32_t binding1PushIndexOffset,
     const VkAllocationCallbacks* pAllocator
 );
 
@@ -950,11 +945,6 @@ int main() {
     	workingShaderModule, 
     	isPipelineBinarySupported,
     	"working.cubin",
-        0,
-         static_cast<std::uint32_t>(descriptorHeapProperties.bufferDescriptorSize),
-        static_cast<std::uint32_t>(descriptorHeapProperties.bufferDescriptorSize),
-        0,
-        4,
     	pAllocator
     );
     const auto failingPipeline = CreateComputePipeline(
@@ -963,11 +953,6 @@ int main() {
     	failingShaderModule, 
     	isPipelineBinarySupported, 
     	"failing.cubin", 
-    	0,
-         static_cast<std::uint32_t>(descriptorHeapProperties.bufferDescriptorSize),
-        static_cast<std::uint32_t>(descriptorHeapProperties.bufferDescriptorSize),
-        0,
-        4,
     	pAllocator
     );
 
@@ -2042,8 +2027,9 @@ void DumpCubinFromPipeline(
             std::vector<std::uint8_t> binBytes(binDataSize);
             vkGetPipelineBinaryDataKHR(device, &binDataInfo, &binKey, &binDataSize, binBytes.data());
 
-            std::filesystem::create_directories(PROJECT_ROOT "\\shaders\\descriptor_heap_layout");
-            const std::filesystem::path outPath = std::filesystem::path(PROJECT_ROOT "\\shaders\\descriptor_heap_layout") / cubinDumpFilename;
+            const auto shadersDir = std::filesystem::path(PROJECT_ROOT) / "shaders" / "descriptor_heap_layout";
+			std::filesystem::create_directories(shadersDir);
+			const std::filesystem::path outPath = shadersDir / cubinDumpFilename;
 
             std::string failureReason;
             const bool success = ExtractCubinFromBinaryData(binBytes, outPath, failureReason);
@@ -2068,11 +2054,6 @@ VkPipeline CreateComputePipeline(
     const VkShaderModule shaderModule, 
     const bool isPipelineBinarySupported,
     const char *const cubinDumpFilename,
-    const std::uint32_t heapOffset,
-    const std::uint32_t heapIndexStride,
-    const std::uint32_t heapArrayStride,
-    const std::uint32_t binding0PushIndexOffset,
-    const std::uint32_t binding1PushIndexOffset,
     const VkAllocationCallbacks *const pAllocator
 ) {
 	const auto vkCreateComputePipelines = reinterpret_cast<PFN_vkCreateComputePipelines>(vkGetDeviceProcAddr(device, "vkCreateComputePipelines"));
@@ -2087,71 +2068,13 @@ VkPipeline CreateComputePipeline(
         .pNext = nullptr,
         .flags = pipelineFlags,
     };
-    const VkDescriptorMappingSourcePushIndexEXT descriptorMappingSourcePushIndexBinding0{
-	    .heapOffset = heapOffset,
-        .pushOffset = binding0PushIndexOffset,
-        .heapIndexStride = heapIndexStride,
-        .heapArrayStride = heapArrayStride,
-        .pEmbeddedSampler = nullptr,
-        .useCombinedImageSamplerIndex = VK_FALSE,
-        .samplerHeapOffset = 0,
-        .samplerPushOffset = 0,
-        .samplerHeapIndexStride = 0,
-        .samplerHeapArrayStride = 0,
-    };
-    const VkDescriptorMappingSourcePushIndexEXT descriptorMappingSourcePushIndexBinding1{
-	    .heapOffset = heapOffset,
-        .pushOffset = binding1PushIndexOffset,
-        .heapIndexStride = heapIndexStride,
-        .heapArrayStride = heapArrayStride,
-        .pEmbeddedSampler = nullptr,
-        .useCombinedImageSamplerIndex = VK_FALSE,
-        .samplerHeapOffset = 0,
-        .samplerPushOffset = 0,
-        .samplerHeapIndexStride = 0,
-        .samplerHeapArrayStride = 0,
-    };
-    const VkDescriptorSetAndBindingMappingEXT descriptorSetAndBindingMappingBinding0{
-	    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_AND_BINDING_MAPPING_EXT,
-        .pNext = nullptr,
-        .descriptorSet = 0,
-        .firstBinding = 0,
-        .bindingCount = 1,
-        .resourceMask = VK_SPIRV_RESOURCE_TYPE_READ_WRITE_STORAGE_BUFFER_BIT_EXT,
-        .source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT,
-        .sourceData = VkDescriptorMappingSourceDataEXT{
-		    .pushIndex = descriptorMappingSourcePushIndexBinding0,
-	    },
-    };
-    const VkDescriptorSetAndBindingMappingEXT descriptorSetAndBindingMappingBinding1{
-	    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_AND_BINDING_MAPPING_EXT,
-        .pNext = nullptr,
-        .descriptorSet = 0,
-        .firstBinding = 1,
-        .bindingCount = 1,
-        .resourceMask = VK_SPIRV_RESOURCE_TYPE_READ_WRITE_STORAGE_BUFFER_BIT_EXT,
-        .source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT,
-        .sourceData = VkDescriptorMappingSourceDataEXT{
-		    .pushIndex = descriptorMappingSourcePushIndexBinding1,
-	    },
-    };
-    const VkDescriptorSetAndBindingMappingEXT descriptorSetAndBindingMappings[] = {
-	    descriptorSetAndBindingMappingBinding0,
-        descriptorSetAndBindingMappingBinding1,
-    };
-    const VkShaderDescriptorSetAndBindingMappingInfoEXT descriptorSetAndBindingMappingInfo{
-	    .sType = VK_STRUCTURE_TYPE_SHADER_DESCRIPTOR_SET_AND_BINDING_MAPPING_INFO_EXT,
-        .pNext = nullptr,
-        .mappingCount = static_cast<std::uint32_t>(std::size(descriptorSetAndBindingMappings)),
-        .pMappings = descriptorSetAndBindingMappings,
-    };
     const VkComputePipelineCreateInfo computePipelineCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
         .pNext = &pipelineCreateFlags2,
         .flags = 0,
         .stage = VkPipelineShaderStageCreateInfo{
 			.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .pNext = &descriptorSetAndBindingMappingInfo,
+            .pNext = nullptr,
             .flags = 0,
             .stage = VK_SHADER_STAGE_COMPUTE_BIT,
             .module = shaderModule,

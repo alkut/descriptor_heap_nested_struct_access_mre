@@ -34,7 +34,13 @@ find_program(SPIRV_DIS_EXECUTABLE
     NO_DEFAULT_PATH
 )
 
+find_program(SPIRV_VAL_EXECUTABLE 
+    NAMES spirv-val spirv-val.exe
+    HINTS "$ENV{VULKAN_SDK}/Bin"
+)
+
 message(STATUS "Using spirv-disasm: ${SPIRV_DIS_EXECUTABLE}")
+message(STATUS "Using spirv-val: ${SPIRV_VAL_EXECUTABLE}")
 message(STATUS "Using glslc compiler: ${Vulkan_GLSLC_EXECUTABLE}")
 
 target_link_libraries(descriptor_heap_layout PRIVATE Vulkan::Headers libzstd_static)
@@ -145,6 +151,22 @@ add_custom_command(
                 -o "${CMAKE_SOURCE_DIR}/shaders/descriptor_heap_layout/failing.comp.spv"
 
         COMMAND
+            "${SPIRV_VAL_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/shaders/shader_mapping/working.comp.spv"
+
+        COMMAND
+            "${SPIRV_VAL_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/shaders/shader_mapping/failing.comp.spv"
+
+        COMMAND
+            "${SPIRV_VAL_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/shaders/descriptor_heap_layout/working.comp.spv"
+
+        COMMAND
+            "${SPIRV_VAL_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/shaders/descriptor_heap_layout/failing.comp.spv"
+
+        COMMAND
             "${SPIRV_DIS_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/shaders/shader_mapping/working.comp.spv"
                 -o "${CMAKE_SOURCE_DIR}/shaders/shader_mapping/working.comp.spv.disasm"
@@ -170,7 +192,7 @@ add_custom_command(
             "${CMAKE_SOURCE_DIR}/shaders/descriptor_heap_layout/working.comp"
             "${CMAKE_SOURCE_DIR}/shaders/descriptor_heap_layout/failing.comp"
 
-        COMMENT "Compiling ${CMAKE_SOURCE_DIR}/shaders/*.comp to SPIR-V"
+        COMMENT "Compiling, validating and disassembling ${CMAKE_SOURCE_DIR}/shaders/*.comp"
 
         VERBATIM
 )

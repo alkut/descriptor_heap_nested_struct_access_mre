@@ -1908,8 +1908,9 @@ void DumpCubinFromPipeline(
             std::vector<std::uint8_t> binBytes(binDataSize);
             vkGetPipelineBinaryDataKHR(device, &binDataInfo, &binKey, &binDataSize, binBytes.data());
 
-            std::filesystem::create_directories(PROJECT_ROOT "\\shaders\\shader_mapping");
-            const std::filesystem::path outPath = std::filesystem::path(PROJECT_ROOT "\\shaders\\shader_mapping") / cubinDumpFilename;
+            const auto shadersDir = std::filesystem::path(PROJECT_ROOT) / "shaders" / "shader_mapping";
+			std::filesystem::create_directories(shadersDir);
+			const std::filesystem::path outPath = shadersDir / cubinDumpFilename;
 
             std::string failureReason;
             const bool success = ExtractCubinFromBinaryData(binBytes, outPath, failureReason);
