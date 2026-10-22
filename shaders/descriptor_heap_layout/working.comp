@@ -1,17 +1,27 @@
 #version 450 core
 
+#pragma use_variable_pointers
+
 #extension GL_EXT_descriptor_heap : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
 layout (local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
-struct Input {
-    int value1;
-    int value2;
-    int value3;
+struct Inner2 {
     int value4;
     int value5;
     int value6;
+};
+
+struct Inner {
+    int value2;
+    int value3;
+    Inner2 inner2;
+};
+
+struct Input {
+    int value1;
+    Inner inner;
 };
 
 struct Output {
@@ -35,7 +45,7 @@ layout (push_constant) uniform PushConstantBlock {
 
 void main() {
     uint i = gl_GlobalInvocationID.x;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value2 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].value2;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value3 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].value3;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value6 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].value6;
+    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value2 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.value2;
+    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value3 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.value3;
+    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value6 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.inner2.value6;
 }

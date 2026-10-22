@@ -1,8 +1,10 @@
 # Nested Struct Member Offset Calculation in `VK_EXT_descriptor_heap`
 
-Minimal Reproducible Example (MRE) demonstrating an unexpected result when accessing nested struct members within a Storage Buffer using `VK_EXT_descriptor_heap`.
+Minimal Reproducible Example demonstrating an unexpected result when accessing nested struct members within a Storage Buffer using `VK_EXT_descriptor_heap`.
 
 When SPIR-V access chains traverse multiple levels of nested structs via `OpBufferPointerEXT` and `OpAccessChain`, intermediate struct member offsets appear to be omitted during driver shader compilation, causing loads to read from shifted offsets.
+
+Declaring `OpCapability VariablePointers` (via `#pragma use_variable_pointers` in GLSL) resolves the issue completely and generates correct cumulative member offsets. Notably, according to the SPIR-V specification (Section 2.16.1), **none of the pointers in the shader are actually variable pointers** (the code uses neither `OpSelect`, `OpPhi`, `OpPtrAccessChain`, `OpFunctionCall`, `OpLoad`, nor `OpConstantNull` for pointers, relying exclusively on `OpBufferPointerEXT` and standard `OpAccessChain`)
 
 ---
 
@@ -11,11 +13,11 @@ When SPIR-V access chains traverse multiple levels of nested structs via `OpBuff
 Precompiled SPIR-V binaries, SPIR-V disassemblies, extracted CUDA binaries (`.cubin`), and disassembled SASS (`.sass`) for SM86 are provided in [`shaders_preview/`](shaders_preview/) for direct inspection without requiring a local build environment:
 
 - **[`shaders_preview/descriptor_heap_layout/`](shaders_preview/descriptor_heap_layout/)** (Demonstration):
-  - `working.comp` & `failing.comp`: GLSL sources using `layout(descriptor_heap)`.
-  - `working.comp.spv.disasm` & `failing.comp.spv.disasm`: SPIR-V disassemblies.
+  - `working.comp` & `failing.comp`: GLSL sources using `layout(descriptor_heap)`. `working.comp` differs solely by the addition of `#pragma use_variable_pointers`.
+  - `working.comp.spv.disasm` & `failing.comp.spv.disasm`: SPIR-V disassemblies, differing solely by a single header line: `+ OpCapability VariablePointers`.
   - `working.cubin` & `failing.cubin`: Pipeline binary containers dumped via `VK_KHR_pipeline_binary`.
   - `working.sass` & `failing.sass`: SASS disassembly generated with `nvdisasm -b SM86`.
-- **[`shaders_preview/shader_mapping/`](shaders_preview/shader_mapping/)** (Workaround):
+- **[`shaders_preview/shader_mapping/`](shaders_preview/shader_mapping/)** (Alternative Workaround):
   - Corresponding shaders using standard descriptor set bindings remapped at pipeline creation via `VkShaderDescriptorSetAndBindingMappingInfoEXT`.
 
 ---
@@ -24,7 +26,7 @@ Precompiled SPIR-V binaries, SPIR-V disassemblies, extracted CUDA binaries (`.cu
 
 ### 1. Shader Structures (GLSL)
 
-The test compares a flat struct (`working.comp`) against an identically laid-out nested struct (`failing.comp`):
+Both shaders (`working.comp` and `failing.comp`) use **identical nested struct layouts**:
 
 ```glsl
 // shaders/descriptor_heap_layout/failing.comp
@@ -79,33 +81,45 @@ void main() {
 }
 ```
 
-In `working.comp`, `Input` is flat:
+The **only difference** between the two GLSL source files is a single pragma directive in `working.comp`:
 
-```glsl
-struct Input {
-    int value1; // offset 0
-    int value2; // offset 4
-    int value3; // offset 8
-    int value4; // offset 12
-    int value5; // offset 16
-    int value6; // offset 20
-};
+```diff
+--- failing.comp
++++ working.comp
+@@ -1,5 +1,7 @@
+ #version 450 core
+ 
++#pragma use_variable_pointers
++
+ #extension GL_EXT_descriptor_heap : enable
+ #extension GL_EXT_nonuniform_qualifier : enable
 ```
 
-Expected byte offsets of loaded fields within `Input`:
+Expected byte offsets of loaded fields within each `Input` element:
 - `inner.value2`: $\text{offsetof}(Input, inner) + \text{offsetof}(Inner, value2) = 4 + 0 = 4 \text{ (0x04)}$
 - `inner.value3`: $\text{offsetof}(Input, inner) + \text{offsetof}(Inner, value3) = 4 + 4 = 8 \text{ (0x08)}$
 - `inner.inner2.value6`: $\text{offsetof}(Input, inner) + \text{offsetof}(Inner, inner2) + \text{offsetof}(Inner2, value6) = 4 + 8 + 8 = 20 \text{ (0x14)}$
 
-### 2. SPIR-V Lowering
+### 2. SPIR-V Lowering Diff
 
-The disassembly in `shaders_preview/descriptor_heap_layout/failing.comp.spv.disasm` shows standard `OpAccessChain` instructions with member decorations:
+When compiled with `glslc --target-env=vulkan1.3`, the resulting SPIR-V disassemblies (`working.comp.spv.disasm` and `failing.comp.spv.disasm`) are **100% identical instruction-for-instruction**, differing by literally a single line in the capability declarations:
 
+```diff
+$ git diff --no-index failing.comp.spv.disasm working.comp.spv.disasm
+--- failing.comp.spv.disasm
++++ working.comp.spv.disasm
+@@ -4,6 +4,7 @@
+ ; Bound: 83
+ ; Schema: 0
+                OpCapability Shader
++               OpCapability VariablePointers
+                OpCapability UntypedPointersKHR
+                OpCapability DescriptorHeapEXT
+                OpExtension "SPV_EXT_descriptor_heap"
+```
+
+Both shaders emit the exact same sequence of instructions to dereference the buffer:
 ```spirv
-OpMemberDecorate %Inner2 2 Offset 8
-OpMemberDecorate %Inner  2 Offset 8
-OpMemberDecorate %Input  1 Offset 4
-...
          %70 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
          %71 = OpLoad %uint %70
          %72 = OpLoad %uint %i
@@ -118,11 +132,11 @@ OpMemberDecorate %Input  1 Offset 4
 The access chain for `value6` passes:
 - `%int_0`: `InputBlock.inputValues`
 - `%72`: array index `i`
-- `%int_1`: member 1 of `Input` (`inner`)
-- `%int_2`: member 2 of `Inner` (`inner2`)
-- `%int_2`: member 2 of `Inner2` (`value6`)
+- `%int_1`: member 1 of `Input` (`inner`, offset 4)
+- `%int_2`: member 2 of `Inner` (`inner2`, offset 8)
+- `%int_2`: member 2 of `Inner2` (`value6`, offset 8)
 
-The module compiles with `glslc` and passes validation via `spirv-val`.
+Notice that `working.comp` **does not use any variable pointer instructions** (`OpSelect`, `OpPhi`, `OpPtrAccessChain`, etc.); it relies solely on standard `OpAccessChain`. Both modules pass validation via `spirv-val`.
 
 ### 3. SASS Disassembly (`nvdisasm -b SM86`)
 
@@ -130,63 +144,59 @@ In both shaders, the array element base offset within `InputBlock` is computed i
 ```sass
 // sizeof(Input) = 6 * sizeof(int) = 24 bytes (0x18 stride)
 // R0 = global invocation ID i
-/*00c0*/  IMAD R1, R0, 0x18, RZ ;   // R1 = i * 24 (element base offset)
+// working.sass: R3 = i * 24; failing.sass: R1 = i * 24
 ```
 
-The discrepancy occurs in the member offsets added relative to `element_base` (`R1`):
+However, the driver compiler's baseline lowering engine fails to accumulate member offsets for nested structs, whereas the variable pointers engine accumulates them correctly:
 
-#### Working Shader (`working.sass` — Flat Struct)
+#### Working Shader (`working.sass` — with `VariablePointers`)
 
 ```sass
-// 1. value2: expected offset = element_base + 0x4
-/*00d0*/  IADD3 R2, R1, 0x4, RZ ;          // R2 = element_base + 0x4 (offsetof value2)
-...
-/*0110*/  LDG.E R2, [R2.U32+UR6], !P0 ;     // loads from element_base + 0x4 (value2 = 2)
+// 1. inner.value2: expected offset = element_base + 0x4
+/*00e0*/ @!P0 IADD3 R5, R3, 0x4, RZ ;             // R5 = element_base + 0x4 (correct!)
+/*00f0*/ @!P0 LDG.E.STRONG.SM R2, [R5.U32+UR4] ;  // loads from element_base + 0x4 (value2 = 2)
 
-// 2. value3: expected offset = element_base + 0x8
-/*0140*/  IADD3 R4, R1, 0x8, RZ ;          // R4 = element_base + 0x8 (offsetof value3)
+// 2. inner.value3: expected offset = element_base + 0x8
+/*00b0*/      IADD3 R4, R3, 0x8, RZ ;             // R4 = element_base + 0x8 (correct!)
 ...
-/*0200*/  LDG.E R4, [R4.U32+UR6], !P1 ;     // loads from element_base + 0x8 (value3 = 3)
+/*01c0*/ @!P1 LDG.E.STRONG.SM R1, [R4.U32+UR4] ;  // loads from element_base + 0x8 (value3 = 3)
 
-// 3. value6: expected offset = element_base + 0x14 (20 bytes)
-/*0220*/  IADD3 R1, R1, 0x14, RZ ;         // R1 = element_base + 0x14 (offsetof value6)
+// 3. inner.inner2.value6: expected offset = element_base + 0x14 (20 bytes: 4 + 8 + 8)
+/*0230*/      IADD3 R3, R3, 0x14, RZ ;            // R3 = element_base + 0x14 (correct!)
 ...
-/*02b0*/  LDG.E R1, [R1.U32+UR6], !P1 ;     // loads from element_base + 0x14 (value6 = 6)
+/*0280*/      LDG.E.STRONG.SM R0, [R3.U32+UR4] ;  // loads from element_base + 0x14 (value6 = 6)
 ```
 
-#### Failing Shader (`failing.sass` — Nested Struct)
+#### Failing Shader (`failing.sass` — without `VariablePointers`)
 
 ```sass
 // 1. inner.value2: expected offset = element_base + 0x4
 // No offset is added to element_base; R1 (+ 0 bytes) is used directly:
-/*00e0*/  SEL R2, R1, RZ, !P0 ;            // R2 = element_base + 0x0 (offset of inner struct omitted!)
-...
-/*0100*/  LDG.E R2, [R2.U32+UR6], !P0 ;     // loads from element_base + 0x0 (reads value1 = 1 instead)
+/*00e0*/  SEL R2, R1, RZ, !P0 ;                   // R2 = element_base + 0x0 (offset of inner struct omitted!)
+/*0100*/  LDG.E R2, [R2.U32+UR6], !P0 ;            // loads from element_base + 0x0 (reads value1 = 1 instead)
 
 // 2. inner.value3: expected offset = element_base + 0x8
-// Only offsetof(Inner, value3) is added; offsetof(Input, inner) = 4 is omitted:
-/*0130*/  IADD3 R4, R1, 0x4, RZ ;          // R4 = element_base + 0x4 (reads value2 = 2 instead)
+// Only offsetof(Inner, value3) = 4 is added; offsetof(Input, inner) = 4 is omitted:
+/*0130*/  IADD3 R4, R1, 0x4, RZ ;                 // R4 = element_base + 0x4 (reads value2 = 2 instead)
 ...
-/*01f0*/  LDG.E R4, [R4.U32+UR6], !P1 ;     // loads from element_base + 0x4
+/*01f0*/  LDG.E R4, [R4.U32+UR6], !P1 ;            // loads from element_base + 0x4
 
 // 3. inner.inner2.value6: expected offset = element_base + 0x14 (20 bytes)
-// Only offsetof(Inner2, value6) is added; outer offsets (4 + 8 = 12) are omitted:
-/*0210*/  IADD3 R1, R1, 0x8, RZ ;          // R1 = element_base + 0x8 (reads value3 = 3 instead)
+// Only offsetof(Inner2, value6) = 8 is added; outer offsets (4 + 8 = 12) are omitted:
+/*0210*/  IADD3 R1, R1, 0x8, RZ ;                 // R1 = element_base + 0x8 (reads value3 = 3 instead)
 ...
-/*02a0*/  LDG.E R1, [R1.U32+UR6], !P1 ;     // loads from element_base + 0x8
+/*02a0*/  LDG.E R1, [R1.U32+UR6], !P1 ;            // loads from element_base + 0x8
 ```
 
-Offset comparison summary relative to `element_base`:
+#### Offset Comparison Summary
 
-The emitted offset in `failing.sass` is **always strictly the local offset within the innermost (leaf) struct**, regardless of the nesting depth:
+The emitted offset in `failing.sass` is **always strictly the local offset within the innermost (leaf) struct**, discarding all outer parent struct offsets in the access chain hierarchy:
 
-| Field Access | Expected Total Member Offset | `working.sass` Member Offset | `failing.sass` Member Offset | Innermost Struct Local Offset | Data Actually Loaded |
+| Field Access | Expected Cumulative Offset | `working.sass` Emitted Offset | `failing.sass` Emitted Offset | Innermost Struct Local Offset | Data Loaded by `failing.sass` |
 |---|---|---|---|---|---|
-| `inner.value2` | `+0x04` | `+0x04` (`/*00d0*/`) | `+0x00` (no addition, `/*00e0*/`) | `offsetof(Inner, value2) = 0` (`+0x00`) | `value1` (offset 0) |
-| `inner.value3` | `+0x08` | `+0x08` (`/*0140*/`) | `+0x04` (`/*0130*/`) | `offsetof(Inner, value3) = 4` (`+0x04`) | `value2` (offset 4) |
-| `inner.inner2.value6` | `+0x14` | `+0x14` (`/*0220*/`) | `+0x08` (`/*0210*/`) | `offsetof(Inner2, value6) = 8` (`+0x08`) | `value3` (offset 8) |
-
-In every case, the driver compiler evaluated only the local offset within the target member's immediate parent struct, discarding all enclosing parent struct offsets in the access chain hierarchy.
+| `inner.value2` | `+0x04` | `+0x04` (`/*00e0*/`) | `+0x00` (`/*00e0*/`) | `offsetof(Inner, value2) = 0` (`+0x00`) | `value1` (offset 0)  |
+| `inner.value3` | `+0x08` | `+0x08` (`/*00b0*/`) | `+0x04` (`/*0130*/`) | `offsetof(Inner, value3) = 4` (`+0x04`) | `value2` (offset 4)  |
+| `inner.inner2.value6` | `+0x14` | `+0x14` (`/*0230*/`) | `+0x08` (`/*0210*/`) | `offsetof(Inner2, value6) = 8` (`+0x08`) | `value3` (offset 8)  |
 
 ### 4. Host Verification Logic
 
@@ -209,7 +219,7 @@ struct ShaderOutput {
     int value6;
 };
 
-// descriptor_heap_layout.cpp: lines 976-988
+// descriptor_heap_layout.cpp: lines 977-993
 constexpr ShaderInput inputValues{
     .value1 = 1,
     .value2 = 2,
@@ -232,7 +242,7 @@ std::ranges::fill(bufferFailingOutputMapped, outputValues);
 After dispatch and execution, the output is verified:
 
 ```cpp
-// descriptor_heap_layout.cpp: lines 1800-1823
+// descriptor_heap_layout.cpp: lines 2147-2168
 void VerifyOutput(
     const std::span<const ShaderOutput, TEST_BUFFER_SIZE_ELEMENTS> output, 
     const char *const name
@@ -257,7 +267,7 @@ void VerifyOutput(
 }
 ```
 
-Because the shader reads from offsets `+0x00`, `+0x04`, and `+0x08`, the output buffer receives `{value2 = 1, value3 = 2, value6 = 3}` instead of `{2, 3, 6}`, triggering the `allShifted` match condition.
+Because `failing.comp` reads from offsets `+0x00`, `+0x04`, and `+0x08`, its output buffer receives `{value2 = 1, value3 = 2, value6 = 3}` instead of `{2, 3, 6}`, triggering the `allShifted` match condition. Meanwhile, `working.comp` reads from `+0x04`, `+0x08`, and `+0x14` and passes verification.
 
 ### 5. Vulkan API Validation Layers
 
@@ -293,56 +303,6 @@ VkBool32 ValidationLayerDebugCallback(
 
 Both test executables complete execution with zero validation warnings or errors.
 
----
-
-## Workaround (`shader_mapping`)
-
-If the shader is authored with standard descriptor set bindings:
-
-```glsl
-// shaders/shader_mapping/failing.comp
-layout (set = 0, binding = 0) buffer InputBlock {
-    Input inputValues[];
-} InputBuffers;
-
-layout (set = 0, binding = 1) buffer OutputBlock {
-    Output outputValues[];
-} OutputBuffers;
-```
-
-and mapped at pipeline creation via `VkShaderDescriptorSetAndBindingMappingInfoEXT` with `VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT`:
-
-```cpp
-// shader_mapping.cpp: lines 1956-1979
-const VkDescriptorMappingSourcePushIndexEXT descriptorMappingSourcePushIndexBinding0{
-    .heapOffset = heapOffset,
-    .pushOffset = binding0PushIndexOffset, // 0
-    .heapIndexStride = heapIndexStride,
-    .heapArrayStride = heapArrayStride,
-    // ...
-};
-const VkDescriptorMappingSourcePushIndexEXT descriptorMappingSourcePushIndexBinding1{
-    .heapOffset = heapOffset,
-    .pushOffset = binding1PushIndexOffset, // 4
-    .heapIndexStride = heapIndexStride,
-    .heapArrayStride = heapArrayStride,
-    // ...
-};
-```
-
-the compiler lowers the SPIR-V through standard storage buffer access chains instead of `OpBufferPointerEXT`.
-
-In `shaders_preview/shader_mapping/working.sass` and `failing.sass`, the resulting SASS is 100% identical and uses the correct offsets:
-
-```sass
-/*00d0*/  IADD3 R2, R1, 0x4, RZ ;   // value2 (offset +4)
-...
-/*0120*/  IADD3 R0, R1, 0x8, RZ ;   // value3 (offset +8)
-...
-/*01c0*/  IADD3 R1, R1, 0x14, RZ ;  // value6 (offset +20 / 0x14)
-```
-
----
 
 ## Executables
 
@@ -350,10 +310,11 @@ The build produces two standalone executables:
 
 1. **`descriptor_heap_layout`**:
    - Uses `layout(descriptor_heap)` in GLSL.
+   - Tests `working` (`#pragma use_variable_pointers`) against `failing` (baseline lowering).
    - Output:
      ```text
-     all ok for "no inner struct"
-     failed: mismatch pattern like offset of inner struct is ignored for "with inner struct"
+     all ok for "nested struct with variable pointers"
+     failed: mismatch pattern like offset of inner struct is ignored for "nested struct without variable pointers"
      ```
 
 2. **`shader_mapping`**:
@@ -372,7 +333,7 @@ The build produces two standalone executables:
 - C++20 compiler (tested with MSVC 19.44 / Visual Studio 2022)
 - CMake 3.31+
 - Git (used by `FetchContent` to retrieve `zstd` v1.5.6)
-- Vulkan SDK 1.3+ / 1.4+ (headers, loader, `glslc`, `spirv-dis`, `spirv-val`)
+- Vulkan SDK 1.3+ (headers, `glslc`, `spirv-dis`, `spirv-val`)
 - Optional: CUDA Toolkit (`nvdisasm`) for `.cubin` SASS disassembly
 
 ### Extension Requirements
@@ -458,4 +419,4 @@ cmake --build build --target clean_binaries
 - **GPU**: NVIDIA GeForce RTX 3060 12 GB (Ampere, `SM86`)
 - **Vulkan SDK**: 1.4.363.0
 - **CUDA Toolkit**: 13.2
-- **Driver Versions Tested**: Every NVIDIA Game Ready Driver release starting from **610.88** up to and including **621.1.0** was tested; the behavior reproduces consistently across all versions in this range.
+- **Driver Versions Tested**: Every NVIDIA Game Ready Driver release starting from **610.88** up to and including **621.01** was tested; the behavior reproduces consistently across all versions in this range.

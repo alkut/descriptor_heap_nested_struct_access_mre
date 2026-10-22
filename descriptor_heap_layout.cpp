@@ -297,18 +297,28 @@ VkShaderModule CreateShaderModule(
 
 #version 450 core
 
+#pragma use_variable_pointers
+
 #extension GL_EXT_descriptor_heap : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
 layout (local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
-struct Input {
-    int value1;
-    int value2;
-    int value3;
+struct Inner2 {
     int value4;
     int value5;
     int value6;
+};
+
+struct Inner {
+    int value2;
+    int value3;
+    Inner2 inner2;
+};
+
+struct Input {
+    int value1;
+    Inner inner;
 };
 
 struct Output {
@@ -332,26 +342,27 @@ layout (push_constant) uniform PushConstantBlock {
 
 void main() {
     uint i = gl_GlobalInvocationID.x;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value2 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].value2;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value3 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].value3;
-    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value6 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].value6;
+    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value2 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.value2;
+    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value3 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.value3;
+    OutputBuffers[PushConstant.outputBufferIdx].outputValues[i].value6 = InputBuffers[PushConstant.inputBufferIdx].inputValues[i].inner.inner2.value6;
 }
 
 ----------------------------------------------------------------------------------------- SPIR-V code -----------------------------------------------------------------------------------------
 
 ; SPIR-V
-; Version: 1.3
+; Version: 1.6
 ; Generator: Google Shaderc over Glslang; 11
-; Bound: 82
+; Bound: 83
 ; Schema: 0
                OpCapability Shader
+               OpCapability VariablePointers
                OpCapability UntypedPointersKHR
                OpCapability DescriptorHeapEXT
                OpExtension "SPV_EXT_descriptor_heap"
                OpExtension "SPV_KHR_untyped_pointers"
           %1 = OpExtInstImport "GLSL.std.450"
                OpMemoryModel Logical GLSL450
-               OpEntryPoint GLCompute %main "main" %gl_GlobalInvocationID
+               OpEntryPoint GLCompute %main "main" %resource_heap %gl_GlobalInvocationID %PushConstant
                OpExecutionMode %main LocalSize 16 1 1
                OpSource GLSL 450
                OpSourceExtension "GL_EXT_descriptor_heap"
@@ -372,13 +383,17 @@ void main() {
                OpMemberName %Output 2 "value6"
                OpName %OutputBlock "OutputBlock"
                OpMemberName %OutputBlock 0 "outputValues"
+               OpName %Inner2 "Inner2"
+               OpMemberName %Inner2 0 "value4"
+               OpMemberName %Inner2 1 "value5"
+               OpMemberName %Inner2 2 "value6"
+               OpName %Inner "Inner"
+               OpMemberName %Inner 0 "value2"
+               OpMemberName %Inner 1 "value3"
+               OpMemberName %Inner 2 "inner2"
                OpName %Input "Input"
                OpMemberName %Input 0 "value1"
-               OpMemberName %Input 1 "value2"
-               OpMemberName %Input 2 "value3"
-               OpMemberName %Input 3 "value4"
-               OpMemberName %Input 4 "value5"
-               OpMemberName %Input 5 "value6"
+               OpMemberName %Input 1 "inner"
                OpName %InputBlock "InputBlock"
                OpMemberName %InputBlock 0 "inputValues"
                OpDecorate %gl_GlobalInvocationID BuiltIn GlobalInvocationId
@@ -394,16 +409,17 @@ void main() {
                OpDecorate %OutputBlock Block
                OpMemberDecorate %OutputBlock 0 Offset 0
                OpDecorateId %_runtimearr_18_0 ArrayStrideIdEXT %19
+               OpMemberDecorate %Inner2 0 Offset 0
+               OpMemberDecorate %Inner2 1 Offset 4
+               OpMemberDecorate %Inner2 2 Offset 8
+               OpMemberDecorate %Inner 0 Offset 0
+               OpMemberDecorate %Inner 1 Offset 4
+               OpMemberDecorate %Inner 2 Offset 8
                OpMemberDecorate %Input 0 Offset 0
                OpMemberDecorate %Input 1 Offset 4
-               OpMemberDecorate %Input 2 Offset 8
-               OpMemberDecorate %Input 3 Offset 12
-               OpMemberDecorate %Input 4 Offset 16
-               OpMemberDecorate %Input 5 Offset 20
                OpDecorate %_runtimearr_Input ArrayStride 24
                OpDecorate %InputBlock Block
                OpMemberDecorate %InputBlock 0 Offset 0
-               OpDecorate %gl_WorkGroupSize BuiltIn WorkgroupSize
        %void = OpTypeVoid
           %3 = OpTypeFunction %void
        %uint = OpTypeInt 32 0
@@ -429,17 +445,18 @@ void main() {
 %OutputBlock = OpTypeStruct %_runtimearr_Output
       %int_0 = OpConstant %int 0
 %_runtimearr_18_0 = OpTypeRuntimeArray %18
-      %Input = OpTypeStruct %int %int %int %int %int %int
+     %Inner2 = OpTypeStruct %int %int %int
+      %Inner = OpTypeStruct %int %int %Inner2
+      %Input = OpTypeStruct %int %Inner
 %_runtimearr_Input = OpTypeRuntimeArray %Input
  %InputBlock = OpTypeStruct %_runtimearr_Input
 %_ptr_StorageBuffer_InputBlock = OpTypePointer StorageBuffer %InputBlock
 %_ptr_StorageBuffer_int = OpTypePointer StorageBuffer %int
 %_ptr_StorageBuffer_OutputBlock = OpTypePointer StorageBuffer %OutputBlock
       %int_2 = OpConstant %int 2
-      %int_5 = OpConstant %int 5
     %uint_16 = OpConstant %uint 16
      %uint_1 = OpConstant %uint 1
-%gl_WorkGroupSize = OpConstantComposite %v3uint %uint_16 %uint_1 %uint_1
+         %82 = OpConstantComposite %v3uint %uint_16 %uint_1 %uint_1
        %main = OpFunction %void None %3
           %5 = OpLabel
           %i = OpVariable %_ptr_Function_uint Function
@@ -451,114 +468,107 @@ void main() {
          %33 = OpLoad %uint %i
          %35 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
          %36 = OpLoad %uint %35
-         %40 = OpLoad %uint %i
-         %41 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %36
-         %43 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %41
-         %45 = OpAccessChain %_ptr_StorageBuffer_int %43 %int_0 %40 %int_1
-         %46 = OpLoad %int %45
-         %47 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %28
-         %49 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %47
-         %50 = OpAccessChain %_ptr_StorageBuffer_int %49 %int_0 %33 %int_0
-               OpStore %50 %46
-         %51 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
-         %52 = OpLoad %uint %51
-         %53 = OpLoad %uint %i
-         %54 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
-         %55 = OpLoad %uint %54
-         %56 = OpLoad %uint %i
-         %58 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %55
-         %59 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %58
-         %60 = OpAccessChain %_ptr_StorageBuffer_int %59 %int_0 %56 %int_2
-         %61 = OpLoad %int %60
-         %62 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %52
-         %63 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %62
-         %64 = OpAccessChain %_ptr_StorageBuffer_int %63 %int_0 %53 %int_1
-               OpStore %64 %61
-         %65 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
-         %66 = OpLoad %uint %65
-         %67 = OpLoad %uint %i
-         %68 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
-         %69 = OpLoad %uint %68
-         %70 = OpLoad %uint %i
-         %72 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %69
-         %73 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %72
-         %74 = OpAccessChain %_ptr_StorageBuffer_int %73 %int_0 %70 %int_5
-         %75 = OpLoad %int %74
-         %76 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %66
-         %77 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %76
-         %78 = OpAccessChain %_ptr_StorageBuffer_int %77 %int_0 %67 %int_2
-               OpStore %78 %75
+         %42 = OpLoad %uint %i
+         %43 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %36
+         %45 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %43
+         %47 = OpAccessChain %_ptr_StorageBuffer_int %45 %int_0 %42 %int_1 %int_0
+         %48 = OpLoad %int %47
+         %49 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %28
+         %51 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %49
+         %52 = OpAccessChain %_ptr_StorageBuffer_int %51 %int_0 %33 %int_0
+               OpStore %52 %48
+         %53 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
+         %54 = OpLoad %uint %53
+         %55 = OpLoad %uint %i
+         %56 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
+         %57 = OpLoad %uint %56
+         %58 = OpLoad %uint %i
+         %59 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %57
+         %60 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %59
+         %61 = OpAccessChain %_ptr_StorageBuffer_int %60 %int_0 %58 %int_1 %int_1
+         %62 = OpLoad %int %61
+         %63 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %54
+         %64 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %63
+         %65 = OpAccessChain %_ptr_StorageBuffer_int %64 %int_0 %55 %int_1
+               OpStore %65 %62
+         %66 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_1
+         %67 = OpLoad %uint %66
+         %68 = OpLoad %uint %i
+         %70 = OpAccessChain %_ptr_PushConstant_uint %PushConstant %int_0
+         %71 = OpLoad %uint %70
+         %72 = OpLoad %uint %i
+         %73 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18_0 %resource_heap %71
+         %74 = OpBufferPointerEXT %_ptr_StorageBuffer_InputBlock %73
+         %75 = OpAccessChain %_ptr_StorageBuffer_int %74 %int_0 %72 %int_1 %int_2 %int_2
+         %76 = OpLoad %int %75
+         %77 = OpUntypedAccessChainKHR %_ptr_UniformConstant %_runtimearr_18 %resource_heap %67
+         %78 = OpBufferPointerEXT %_ptr_StorageBuffer_OutputBlock %77
+         %79 = OpAccessChain %_ptr_StorageBuffer_int %78 %int_0 %68 %int_2
+               OpStore %79 %76
                OpReturn
                OpFunctionEnd
 
 ----------------------------------------------------------------------------------------- SASS code -----------------------------------------------------------------------------------------
 
-.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
+	.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
 	.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
         /*0000*/                   S2R R0, SR_CTAID.X ;
-        /*0010*/                   ULDC.64 UR8, c[0x0][0x20] ;
-        /*0020*/                   USHF.L.U32.HI UR4, URZ, 0x4, UR8 ;
+        /*0010*/                   ULDC.64 UR6, c[0x0][0x20] ;
+        /*0020*/                   USHF.L.U32.HI UR4, URZ, 0x4, UR6 ;
         /*0030*/                   S2R R1, SR_TID.X ;
-        /*0040*/                   ULDC.64 UR10, c[0x0][0x220] ;
-        /*0050*/                   UIADD3 UR4, UP0, UR4, UR10, URZ ;
-        /*0060*/                   UIADD3.X UR5, URZ, UR11, URZ, UP0, !UPT ;
-        /*0070*/                   ULDC UR8, [UR4+0x8], !UPT ;
+        /*0040*/                   ULDC.64 UR8, c[0x0][0x220] ;
+        /*0050*/                   UIADD3 UR4, UP0, UR4, UR8, URZ ;
+        /*0060*/                   UIADD3.X UR5, URZ, UR9, URZ, UP0, !UPT ;
+        /*0070*/                   ULDC UR10, [UR4+0x8], !UPT ;
         /*0080*/                   ULDC.64 UR4, [UR4], !UPT ;
-        /*0090*/                   UMOV UR6, UR4 ;
-        /*00a0*/                   IMAD R0, R0, 0x10, R1 ;
-        /*00b0*/                   UMOV UR7, UR5 ;
-        /*00c0*/                   IMAD R1, R0, 0x18, RZ ;
-        /*00d0*/                   IADD3 R2, R1, 0x4, RZ ;
-        /*00e0*/                   ISETP.GE.U32.AND P0, PT, R2, UR8, PT ;
-        /*00f0*/                   SEL R2, R2, RZ, !P0 ;
-        /*0100*/                   ISETP.GE.U32.AND P0, PT, R2, UR8, PT ;
-        /*0110*/                   LDG.E R2, [R2.U32+UR6], !P0 ;
-        /*0120*/                   USHF.L.U32.HI UR4, URZ, 0x4, UR9 ;
-        /*0130*/                   IMAD R0, R0, 0xc, RZ ;
-        /*0140*/                   IADD3 R4, R1, 0x8, RZ ;
-        /*0150*/                   UIADD3 UR4, UP0, UR4, UR10, URZ ;
-        /*0160*/                   ISETP.GE.U32.AND P1, PT, R4.reuse, UR8, PT ;
-        /*0170*/                   UIADD3.X UR5, URZ, UR11, URZ, UP0, !UPT ;
-        /*0180*/                   SEL R4, R4, RZ, !P1 ;
-        /*0190*/                   ISETP.GE.U32.AND P1, PT, R4, UR8, PT ;
-        /*01a0*/                   ULDC UR9, [UR4+0x8], !UPT ;
-        /*01b0*/                   ISETP.GE.U32.AND P0, PT, R0, UR9, PT ;
-        /*01c0*/                   ULDC.64 UR4, [UR4], !UPT ;
-        /*01d0*/                   SEL R3, R0, RZ, !P0 ;
-        /*01e0*/                   ISETP.LT.U32.AND P0, PT, R3, UR9, PT ;
-        /*01f0*/               @P0 STG.E [R3.U32+UR4], R2 ;
-        /*0200*/                   LDG.E R4, [R4.U32+UR6], !P1 ;
-        /*0210*/                   IADD3 R5, R0, 0x4, RZ ;
-        /*0220*/                   IADD3 R1, R1, 0x14, RZ ;
-        /*0230*/                   ISETP.GE.U32.AND P0, PT, R5, UR9, PT ;
-        /*0240*/                   ISETP.GE.U32.AND P1, PT, R1, UR8, PT ;
-        /*0250*/                   SEL R5, R5, RZ, !P0 ;
-        /*0260*/                   SEL R1, R1, RZ, !P1 ;
-        /*0270*/                   ISETP.LT.U32.AND P0, PT, R5, UR9, PT ;
-        /*0280*/                   ISETP.GE.U32.AND P1, PT, R1, UR8, PT ;
-        /*0290*/                   IADD3 R0, R0, 0x8, RZ ;
-        /*02a0*/               @P0 STG.E [R5.U32+UR4], R4 ;
-        /*02b0*/                   LDG.E R1, [R1.U32+UR6], !P1 ;
-        /*02c0*/                   ISETP.GE.U32.AND P0, PT, R0, UR9, PT ;
-        /*02d0*/                   SEL R0, R0, RZ, !P0 ;
-        /*02e0*/                   ISETP.LT.U32.AND P0, PT, R0, UR9, PT ;
-        /*02f0*/               @P0 STG.E [R0.U32+UR4], R1 ;
-        /*0300*/                   EXIT ;
-        /*0310*/                   BRA 0x310;
+        /*0090*/                   IMAD R0, R0, 0x10, R1 ;
+        /*00a0*/                   IMAD R3, R0, 0x18, RZ ;
+        /*00b0*/                   IADD3 R4, R3, 0x8, RZ ;
+        /*00c0*/                   ISETP.GT.U32.AND P0, PT, R4, UR10, PT ;
+        /*00d0*/               @P0 IMAD.MOV.U32 R2, RZ, RZ, RZ ;
+        /*00e0*/              @!P0 IADD3 R5, R3, 0x4, RZ ;
+        /*00f0*/              @!P0 LDG.E.STRONG.SM R2, [R5.U32+UR4] ;
+        /*0100*/                   USHF.L.U32.HI UR6, URZ, 0x4, UR7 ;
+        /*0110*/                   IMAD R7, R0, 0xc, RZ ;
+        /*0120*/                   IADD3 R0, R3, 0xc, RZ ;
+        /*0130*/                   UIADD3 UR6, UP0, UR6, UR8, URZ ;
+        /*0140*/                   ISETP.GT.U32.AND P1, PT, R0, UR10, PT ;
+        /*0150*/                   UIADD3.X UR7, URZ, UR9, URZ, UP0, !UPT ;
+        /*0160*/                   IADD3 R6, R7, 0x4, RZ ;
+        /*0170*/               @P1 IMAD.MOV.U32 R1, RZ, RZ, RZ ;
+        /*0180*/                   ULDC UR8, [UR6+0x8], !UPT ;
+        /*0190*/                   ISETP.GT.U32.AND P0, PT, R6, UR8, PT ;
+        /*01a0*/                   ULDC.64 UR6, [UR6], !UPT ;
+        /*01b0*/              @!P0 STG.E.STRONG.SM [R7.U32+UR6], R2 ;
+        /*01c0*/              @!P1 LDG.E.STRONG.SM R1, [R4.U32+UR4] ;
+        /*01d0*/                   IADD3 R5, R7, 0x8, RZ ;
+        /*01e0*/                   BSSY B0, 0x2a0 ;
+        /*01f0*/                   IADD3 R0, R3, 0x18, RZ ;
+        /*0200*/                   ISETP.GT.U32.AND P0, PT, R5, UR8, PT ;
+        /*0210*/                   ISETP.GT.U32.AND P1, PT, R0, UR10, PT ;
+        /*0220*/                   IADD3 R0, R7, 0xc, RZ ;
+        /*0230*/                   IADD3 R3, R3, 0x14, RZ ;
+        /*0240*/                   ISETP.GT.U32.AND P2, PT, R0, UR8, PT ;
+        /*0250*/               @P1 IMAD.MOV.U32 R0, RZ, RZ, RZ ;
+        /*0260*/              @!P0 STG.E.STRONG.SM [R6.U32+UR6], R1 ;
+        /*0270*/               @P1 BRA 0x290 ;
+        /*0280*/                   LDG.E.STRONG.SM R0, [R3.U32+UR4] ;
+        /*0290*/                   BSYNC B0 ;
+        /*02a0*/               @P2 EXIT ;
+        /*02b0*/                   UMOV UR4, UR6 ;
+        /*02c0*/                   UMOV UR5, UR7 ;
+        /*02d0*/                   STG.E.STRONG.SM [R5.U32+UR4], R0 ;
+        /*02e0*/                   EXIT ;
+        /*02f0*/                   BRA 0x2f0;
+        /*0300*/                   NOP;
+        /*0310*/                   NOP;
         /*0320*/                   NOP;
         /*0330*/                   NOP;
         /*0340*/                   NOP;
         /*0350*/                   NOP;
         /*0360*/                   NOP;
         /*0370*/                   NOP;
-        /*0380*/                   NOP;
-        /*0390*/                   NOP;
-        /*03a0*/                   NOP;
-        /*03b0*/                   NOP;
-        /*03c0*/                   NOP;
-        /*03d0*/                   NOP;
-        /*03e0*/                   NOP;
-        /*03f0*/                   NOP;
+
 #endif // 0
 
 VkShaderModule CreateShaderModuleWorking(
@@ -623,7 +633,7 @@ void main() {
 ----------------------------------------------------------------------------------------- SPIR-V code -----------------------------------------------------------------------------------------
 
 ; SPIR-V
-; Version: 1.3
+; Version: 1.6
 ; Generator: Google Shaderc over Glslang; 11
 ; Bound: 83
 ; Schema: 0
@@ -634,7 +644,7 @@ void main() {
                OpExtension "SPV_KHR_untyped_pointers"
           %1 = OpExtInstImport "GLSL.std.450"
                OpMemoryModel Logical GLSL450
-               OpEntryPoint GLCompute %main "main" %gl_GlobalInvocationID
+               OpEntryPoint GLCompute %main "main" %resource_heap %gl_GlobalInvocationID %PushConstant
                OpExecutionMode %main LocalSize 16 1 1
                OpSource GLSL 450
                OpSourceExtension "GL_EXT_descriptor_heap"
@@ -692,7 +702,6 @@ void main() {
                OpDecorate %_runtimearr_Input ArrayStride 24
                OpDecorate %InputBlock Block
                OpMemberDecorate %InputBlock 0 Offset 0
-               OpDecorate %gl_WorkGroupSize BuiltIn WorkgroupSize
        %void = OpTypeVoid
           %3 = OpTypeFunction %void
        %uint = OpTypeInt 32 0
@@ -729,7 +738,7 @@ void main() {
       %int_2 = OpConstant %int 2
     %uint_16 = OpConstant %uint 16
      %uint_1 = OpConstant %uint 1
-%gl_WorkGroupSize = OpConstantComposite %v3uint %uint_16 %uint_1 %uint_1
+         %82 = OpConstantComposite %v3uint %uint_16 %uint_1 %uint_1
        %main = OpFunction %void None %3
           %5 = OpLabel
           %i = OpVariable %_ptr_Function_uint Function
@@ -783,7 +792,7 @@ void main() {
 
 ----------------------------------------------------------------------------------------- SASS code -----------------------------------------------------------------------------------------
 
-.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
+	.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
 	.headerflags	@"EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
         /*0000*/                   S2R R0, SR_CTAID.X ;
         /*0010*/                   ULDC.64 UR8, c[0x0][0x20] ;
@@ -1161,8 +1170,8 @@ int main() {
         InvalidateCacheBuffer(vkGetDeviceProcAddr, device, bufferFailingOutput);
         InvalidateCacheBuffer(vkGetDeviceProcAddr, device, bufferResourceHeap);
     }
-    VerifyOutput(bufferWorkingOutputMapped, "no inner struct");
-    VerifyOutput(bufferFailingOutputMapped, "with inner struct");
+    VerifyOutput(bufferWorkingOutputMapped, "nested struct with variable pointers");
+    VerifyOutput(bufferFailingOutputMapped, "nested struct without variable pointers");
 
     
     DestroyBuffer(vkGetDeviceProcAddr, device, bufferWorkingInput, pAllocator);
@@ -1255,7 +1264,7 @@ VkInstance CreateInstance(
             .applicationVersion = 0,
             .pEngineName = nullptr,
             .engineVersion = 0,
-            .apiVersion = VK_MAKE_API_VERSION(0, 1, 1, 0),
+            .apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 0),
     };
     const auto debugUtilsMessengerCreateInfo = GetDebugUtilsMessengerCreateInfo();
     constexpr const char* validationLayers[] = {
@@ -1434,9 +1443,25 @@ VkDevice CreateDevice(
             .descriptorHeap = true,
             .descriptorHeapCaptureReplay = false,
     };
+    VkPhysicalDeviceVulkan11Features vulkan11Features{
+	    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+        .pNext = &descriptorHeapFeatures,
+        .storageBuffer16BitAccess = VK_FALSE,
+        .uniformAndStorageBuffer16BitAccess = VK_FALSE,
+        .storagePushConstant16 = VK_FALSE,
+        .storageInputOutput16 = VK_FALSE,
+        .multiview = VK_FALSE,
+        .multiviewGeometryShader = VK_FALSE,
+        .multiviewTessellationShader = VK_FALSE,
+        .variablePointersStorageBuffer = VK_TRUE,
+        .variablePointers = VK_TRUE,
+        .protectedMemory = VK_FALSE,
+        .samplerYcbcrConversion = VK_FALSE,
+        .shaderDrawParameters = VK_FALSE,
+    };
     const VkDeviceCreateInfo deviceCreateInfo{
             .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &descriptorHeapFeatures,
+            .pNext = &vulkan11Features,
             .flags = 0,
             .queueCreateInfoCount = 1,
             .pQueueCreateInfos = &deviceQueueCreateInfo,

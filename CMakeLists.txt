@@ -140,13 +140,13 @@ add_custom_command(
 
         COMMAND 
             "${Vulkan_GLSLC_EXECUTABLE}"
-                --target-env=vulkan1.1 
+                --target-env=vulkan1.3 
                 "${CMAKE_SOURCE_DIR}/shaders/descriptor_heap_layout/working.comp" 
                 -o "${CMAKE_SOURCE_DIR}/shaders/descriptor_heap_layout/working.comp.spv"
 
         COMMAND 
             "${Vulkan_GLSLC_EXECUTABLE}"
-                --target-env=vulkan1.1 
+                --target-env=vulkan1.3 
                 "${CMAKE_SOURCE_DIR}/shaders/descriptor_heap_layout/failing.comp" 
                 -o "${CMAKE_SOURCE_DIR}/shaders/descriptor_heap_layout/failing.comp.spv"
 
